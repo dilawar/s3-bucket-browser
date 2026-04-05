@@ -2,6 +2,16 @@ use egui::{Button, Key, RichText, TextEdit, Ui};
 
 use crate::storage::StoragePath;
 
+/// Read-only state the toolbar needs to render itself.
+pub struct ToolbarState<'a> {
+    pub path_input: &'a mut String,
+    pub can_back: bool,
+    pub can_forward: bool,
+    pub can_up: bool,
+    pub dark_mode: bool,
+}
+
+/// Actions the toolbar produced this frame.
 #[derive(Default)]
 pub struct ToolbarResponse {
     pub navigate_to: Option<StoragePath>,
@@ -12,14 +22,14 @@ pub struct ToolbarResponse {
     pub toggle_theme: bool,
 }
 
-pub fn show(
-    ui: &mut Ui,
-    path_input: &mut String,
-    can_back: bool,
-    can_forward: bool,
-    can_up: bool,
-    dark_mode: bool,
-) -> ToolbarResponse {
+pub fn show(ui: &mut Ui, state: ToolbarState<'_>) -> ToolbarResponse {
+    let ToolbarState {
+        path_input,
+        can_back,
+        can_forward,
+        can_up,
+        dark_mode,
+    } = state;
     let mut resp = ToolbarResponse::default();
 
     ui.horizontal(|ui| {

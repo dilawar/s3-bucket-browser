@@ -33,6 +33,20 @@ pub const ENV_ACCESS_KEY: &str = "AWS_ACCESS_KEY_ID";
 pub const ENV_SECRET_KEY: &str = "AWS_SECRET_ACCESS_KEY";
 pub const ENV_REGION: &str = "AWS_DEFAULT_REGION";
 
+/// Explicit credentials for constructing an [`S3Backend`].
+///
+/// Bundles the five parameters of [`S3Backend::with_credentials`] so call
+/// sites don't have to pass them as positional arguments.
+pub struct S3Config<'a> {
+    pub bucket: &'a str,
+    /// Custom endpoint URL (e.g. `"https://s3.us-west-004.backblazeb2.com"`).
+    /// `None` uses standard AWS S3.
+    pub endpoint: Option<&'a str>,
+    pub access_key: &'a str,
+    pub secret_key: &'a str,
+    pub region: &'a str,
+}
+
 impl S3Backend {
     /// Build entirely from environment variables.
     /// Reads `AWS_S3_BUCKET` for the bucket name plus the standard AWS credential vars.
@@ -57,15 +71,11 @@ impl S3Backend {
 
     /// Explicit credentials — used when env vars are not set.
     ///
-    /// When `endpoint` is `Some`, path-style requests are used automatically,
-    /// which is required by Backblaze B2, MinIO, and most non-AWS S3 providers.
-    pub fn with_credentials(
-        bucket: &str,
-        endpoint: Option<&str>,
-        access_key: &str,
-        secret_key: &str,
-        region: &str,
-    ) -> Result<Self> {
+    /// When `config.endpoint` is `Some`, path-style requests are used
+    /// automatically, which is required by Backblaze B2, MinIO, and most
+    /// non-AWS S3 providers.
+    pub fn with_credentials(config: S3Config<'_>) -> Result<Self> {
+        let S3Config { bucket, endpoint, access_key, secret_key, region } = config;
         let mut builder = AmazonS3Builder::new()
             .with_bucket_name(bucket)
             .with_access_key_id(access_key)

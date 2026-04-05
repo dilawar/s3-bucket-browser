@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::async_rt::{TransferHandle, base_name, spawn_transfer};
+use crate::async_rt::{SpawnContext, TransferHandle, base_name, spawn_transfer};
 use crate::storage::{Backend, StoragePath};
 
 // ── Individual file download ──────────────────────────────────────────────────
@@ -10,13 +10,8 @@ use crate::storage::{Backend, StoragePath};
 /// Spawn a download task.
 /// - Single path → native save-file dialog.
 /// - Multiple paths → native pick-folder dialog; each file is saved there by name.
-pub fn spawn_download(
-    backend: Arc<dyn Backend>,
-    paths: Vec<StoragePath>,
-    ctx: egui::Context,
-    rt: &tokio::runtime::Handle,
-) -> TransferHandle {
-    spawn_transfer(rt, ctx, move || do_download(backend, paths))
+pub fn spawn_download(sc: SpawnContext, paths: Vec<StoragePath>) -> TransferHandle {
+    spawn_transfer(sc, move |backend| do_download(backend, paths))
 }
 
 async fn do_download(backend: Arc<dyn Backend>, paths: Vec<StoragePath>) -> Result<String> {
@@ -93,15 +88,11 @@ pub async fn estimate_size(
 /// Spawn a task that collects all selected paths (expanding directories
 /// recursively), then writes them into a single ZIP file chosen by the user.
 pub fn spawn_download_zip(
-    backend: Arc<dyn Backend>,
+    sc: SpawnContext,
     paths: Vec<StoragePath>,
     current_path: StoragePath,
-    ctx: egui::Context,
-    rt: &tokio::runtime::Handle,
 ) -> TransferHandle {
-    spawn_transfer(rt, ctx, move || {
-        do_download_zip(backend, paths, current_path)
-    })
+    spawn_transfer(sc, move |backend| do_download_zip(backend, paths, current_path))
 }
 
 async fn do_download_zip(

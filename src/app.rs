@@ -4,9 +4,10 @@ use std::sync::Arc;
 use egui::{CentralPanel, Color32, RichText, SidePanel, TopBottomPanel};
 use tracing::info;
 
-use crate::async_rt::{self, ListingHandle, TransferHandle};
+use crate::async_rt::{self, ListingHandle, SpawnContext, TransferHandle};
 use crate::download;
-use crate::storage::{Backend, StorageEntry, StoragePath};
+use crate::upload;
+use crate::storage::{Backend, S3Config, StorageEntry, StoragePath};
 use crate::ui::{config, file_list, file_list::SortState, sidebar, toolbar};
 
 // ── App mode ──────────────────────────────────────────────────────────────────
@@ -113,18 +114,13 @@ impl S3Explorer {
     // ── listing ───────────────────────────────────────────────────────────────
 
     fn request_listing(&mut self, path: StoragePath, ctx: &egui::Context) {
-        let Some(backend) = &self.backend else { return };
+        if self.backend.is_none() { return }
         self.loading = true;
         self.error = None;
         self.filter.clear();
         self.path_input = path.to_string();
         self.current_path = path.clone();
-        self.listing = Some(async_rt::spawn_listing(
-            Arc::clone(backend),
-            path,
-            ctx.clone(),
-            &self.rt,
-        ));
+        self.listing = Some(async_rt::spawn_listing(self.spawn_ctx(ctx), path));
     }
 
     fn poll_listing(&mut self) {
@@ -143,49 +139,35 @@ impl S3Explorer {
     // ── transfers ─────────────────────────────────────────────────────────────
 
     fn start_download(&mut self, paths: Vec<StoragePath>, ctx: &egui::Context) {
-        let Some(backend) = &self.backend else { return };
+        if self.backend.is_none() { return }
         self.transfer_msg = None;
-        self.transfer = Some(download::spawn_download(
-            Arc::clone(backend),
-            paths,
-            ctx.clone(),
-            &self.rt,
-        ));
+        self.transfer = Some(download::spawn_download(self.spawn_ctx(ctx), paths));
     }
 
     fn start_delete(&mut self, paths: Vec<StoragePath>, ctx: &egui::Context) {
-        let Some(backend) = &self.backend else { return };
+        if self.backend.is_none() { return }
         self.transfer_msg = None;
         for p in &paths {
             self.selection.remove(p);
         }
-        self.transfer = Some(async_rt::spawn_delete(
-            Arc::clone(backend),
-            paths,
-            ctx.clone(),
-            &self.rt,
-        ));
+        self.transfer = Some(async_rt::spawn_delete(self.spawn_ctx(ctx), paths));
     }
 
     fn start_upload(&mut self, ctx: &egui::Context) {
-        let Some(backend) = &self.backend else { return };
+        if self.backend.is_none() { return }
         self.transfer_msg = None;
-        self.transfer = Some(async_rt::spawn_upload(
-            Arc::clone(backend),
+        self.transfer = Some(upload::spawn_upload(
+            self.spawn_ctx(ctx),
             self.current_path.clone(),
-            ctx.clone(),
-            &self.rt,
         ));
     }
 
     fn start_upload_folder(&mut self, ctx: &egui::Context) {
-        let Some(backend) = &self.backend else { return };
+        if self.backend.is_none() { return }
         self.transfer_msg = None;
-        self.transfer = Some(async_rt::spawn_upload_folder(
-            Arc::clone(backend),
+        self.transfer = Some(upload::spawn_upload_folder(
+            self.spawn_ctx(ctx),
             self.current_path.clone(),
-            ctx.clone(),
-            &self.rt,
         ));
     }
 
@@ -213,41 +195,46 @@ impl S3Explorer {
         self.transfer.as_ref().is_some_and(|h| h.is_running())
     }
 
+    /// Build a [`SpawnContext`] from the current app state for the given frame.
+    fn spawn_ctx(&self, ctx: &egui::Context) -> SpawnContext {
+        SpawnContext {
+            backend: Arc::clone(self.backend.as_ref().expect("backend is set in Browse mode")),
+            ctx: ctx.clone(),
+            rt: self.rt.clone(),
+        }
+    }
+
     // ── ZIP download with size pre-flight ─────────────────────────────────────
 
     fn start_zip_download(&mut self, paths: Vec<StoragePath>, ctx: &egui::Context) {
-        let Some(backend) = &self.backend else { return };
+        if self.backend.is_none() { return }
         let current = self.current_path.clone();
         self.transfer_msg = None;
         self.transfer = Some(download::spawn_download_zip(
-            Arc::clone(backend),
+            self.spawn_ctx(ctx),
             paths,
             current,
-            ctx.clone(),
-            &self.rt,
         ));
     }
 
     /// Estimate the total download size; if it exceeds the threshold, store a
     /// confirmation request instead of starting the download immediately.
     fn request_zip_download(&mut self, paths: Vec<StoragePath>, ctx: &egui::Context) {
-        let Some(backend) = &self.backend else { return };
-        let backend = Arc::clone(backend);
+        if self.backend.is_none() { return }
+        let sc = self.spawn_ctx(ctx);
         let paths_clone = paths.clone();
         let current = self.current_path.clone();
-        let ctx2 = ctx.clone();
-        let rt = self.rt.clone();
 
         // Run size estimation in background; result lands on next frame.
         let slot = std::sync::Arc::new(std::sync::Mutex::new(None::<Option<u64>>));
         let slot2 = std::sync::Arc::clone(&slot);
-        rt.spawn(async move {
-            let size = download::estimate_size(backend, &paths_clone)
+        sc.rt.spawn(async move {
+            let size = download::estimate_size(sc.backend, &paths_clone)
                 .await
                 .ok()
                 .flatten();
             *slot2.lock().unwrap() = Some(size);
-            ctx2.request_repaint();
+            sc.ctx.request_repaint();
         });
 
         // Immediately kick off if we can't estimate (unknown sizes); otherwise
@@ -286,13 +273,8 @@ impl S3Explorer {
     // ── presign ───────────────────────────────────────────────────────────────
 
     fn start_presign(&mut self, path: StoragePath, ctx: &egui::Context) {
-        let Some(backend) = &self.backend else { return };
-        self.presign = Some(async_rt::spawn_presign(
-            Arc::clone(backend),
-            path,
-            ctx.clone(),
-            &self.rt,
-        ));
+        if self.backend.is_none() { return }
+        self.presign = Some(async_rt::spawn_presign(self.spawn_ctx(ctx), path));
         self.transfer_msg = Some("Generating presigned URL…".to_owned());
     }
 
@@ -362,13 +344,13 @@ impl S3Explorer {
             fields.region.clone()
         };
 
-        match S3Backend::with_credentials(
-            &fields.bucket,
-            endpoint.as_deref(),
-            &fields.access_key,
-            &fields.secret_key,
-            &region,
-        ) {
+        match S3Backend::with_credentials(S3Config {
+            bucket: &fields.bucket,
+            endpoint: endpoint.as_deref(),
+            access_key: &fields.access_key,
+            secret_key: &fields.secret_key,
+            region: &region,
+        }) {
             Ok(backend) => {
                 if fields.remember {
                     let creds = SavedCredentials {
@@ -469,14 +451,11 @@ impl S3Explorer {
                     current_path,
                     ..
                 } = self.zip_confirm.take().unwrap();
-                let Some(backend) = &self.backend else { return };
                 self.transfer_msg = None;
                 self.transfer = Some(download::spawn_download_zip(
-                    Arc::clone(backend),
+                    self.spawn_ctx(ctx),
                     paths,
                     current_path,
-                    ctx.clone(),
-                    &self.rt,
                 ));
             } else if cancelled {
                 self.zip_confirm = None;
@@ -491,11 +470,13 @@ impl S3Explorer {
         TopBottomPanel::top("toolbar").show(ctx, |ui| {
             let resp = toolbar::show(
                 ui,
-                &mut self.path_input,
-                can_back,
-                can_forward,
-                can_up,
-                self.dark_mode,
+                toolbar::ToolbarState {
+                    path_input: &mut self.path_input,
+                    can_back,
+                    can_forward,
+                    can_up,
+                    dark_mode: self.dark_mode,
+                },
             );
             if resp.toggle_theme {
                 self.dark_mode = !self.dark_mode;
@@ -613,13 +594,15 @@ impl S3Explorer {
         CentralPanel::default().show(ctx, |ui| {
             let resp = file_list::show(
                 ui,
-                &self.entries,
-                &mut self.filter,
-                &mut self.sort,
-                &self.selection,
-                self.loading,
-                self.error.as_deref(),
-                busy,
+                file_list::FileListState {
+                    entries: &self.entries,
+                    filter: &mut self.filter,
+                    sort: &mut self.sort,
+                    selection: &self.selection,
+                    loading: self.loading,
+                    error: self.error.as_deref(),
+                    transfer_busy: busy,
+                },
             );
             if let Some(dir) = resp.open_dir {
                 self.navigate_to(dir, ctx);

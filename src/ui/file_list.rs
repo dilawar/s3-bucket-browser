@@ -94,17 +94,27 @@ fn file_icon(name: &str) -> &'static str {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn show(
-    ui: &mut Ui,
-    entries: &[StorageEntry],
-    filter: &mut String,
-    sort: &mut SortState,
-    selection: &HashSet<StoragePath>,
-    loading: bool,
-    error: Option<&str>,
-    transfer_busy: bool,
-) -> FileListResponse {
+/// State the file list needs to render itself.
+pub struct FileListState<'a> {
+    pub entries: &'a [StorageEntry],
+    pub filter: &'a mut String,
+    pub sort: &'a mut SortState,
+    pub selection: &'a HashSet<StoragePath>,
+    pub loading: bool,
+    pub error: Option<&'a str>,
+    pub transfer_busy: bool,
+}
+
+pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
+    let FileListState {
+        entries,
+        filter,
+        sort,
+        selection,
+        loading,
+        error,
+        transfer_busy,
+    } = state;
     // ── All output state ──────────────────────────────────────────────────────
     let upload = Cell::new(false);
     let upload_folder = Cell::new(false);
