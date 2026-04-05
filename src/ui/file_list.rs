@@ -94,6 +94,7 @@ fn file_icon(name: &str) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut Ui,
     entries: &[StorageEntry],

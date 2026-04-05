@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::{Result, bail};
 use async_trait::async_trait;
@@ -59,7 +59,7 @@ impl Backend for LocalBackend {
     }
 }
 
-fn list_dir(dir: &PathBuf, parent: &StoragePath) -> Vec<StorageEntry> {
+fn list_dir(dir: &Path, parent: &StoragePath) -> Vec<StorageEntry> {
     debug!("Listing {:?}", dir);
     let Ok(read_dir) = std::fs::read_dir(dir) else {
         warn!("Cannot read {:?}", dir);

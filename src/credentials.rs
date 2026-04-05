@@ -4,7 +4,7 @@
 /// `<config_dir>/key` (mode 0o600 on Unix).  Credentials are serialised as
 /// TOML, encrypted with AES-256-GCM, and stored as
 /// `<config_dir>/credentials` (12-byte nonce || ciphertext).
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use aes_gcm::{
     Aes256Gcm, Key, Nonce,
@@ -97,7 +97,7 @@ fn project_config_dir() -> Result<PathBuf> {
         .context("could not determine config directory")
 }
 
-fn load_or_generate_key(dir: &PathBuf) -> Result<Key<Aes256Gcm>> {
+fn load_or_generate_key(dir: &Path) -> Result<Key<Aes256Gcm>> {
     let path = dir.join(KEY_FILE);
     if path.exists() {
         let bytes = std::fs::read(&path).with_context(|| format!("reading key file {path:?}"))?;
@@ -116,13 +116,13 @@ fn load_or_generate_key(dir: &PathBuf) -> Result<Key<Aes256Gcm>> {
 }
 
 #[cfg(unix)]
-fn set_private_permissions(path: &PathBuf) -> Result<()> {
+fn set_private_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
         .with_context(|| format!("setting permissions on {path:?}"))
 }
 
 #[cfg(not(unix))]
-fn set_private_permissions(_path: &PathBuf) -> Result<()> {
+fn set_private_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }

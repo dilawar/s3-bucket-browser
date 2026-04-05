@@ -191,7 +191,7 @@ pub struct StorageEntry {
 
 /// Sort entries in-place: directories first, then files; each group
 /// case-insensitively alphabetical.
-pub fn sort_entries(entries: &mut Vec<StorageEntry>) {
+pub fn sort_entries(entries: &mut [StorageEntry]) {
     entries.sort_by(|a, b| match (&a.kind, &b.kind) {
         (EntryKind::Directory, EntryKind::File) => std::cmp::Ordering::Less,
         (EntryKind::File, EntryKind::Directory) => std::cmp::Ordering::Greater,
