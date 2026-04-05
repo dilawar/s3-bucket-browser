@@ -255,9 +255,11 @@ impl S3Explorer {
             );
         });
 
+        let max_sidebar = ctx.screen_rect().width() / 2.0;
         SidePanel::left("sidebar")
             .resizable(true)
             .default_width(220.0)
+            .width_range(80.0..=max_sidebar)
             .show(ctx, |ui| {
                 let resp = sidebar::show(ui, &self.current_path, &mut self.filter);
                 if let Some(path) = resp.navigate_to {
