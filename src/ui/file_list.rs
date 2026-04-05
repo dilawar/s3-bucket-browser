@@ -272,26 +272,31 @@ pub fn show(
             // Capture sort clicks from headers; applied after the table renders.
             let mut sort_click: Option<SortColumn> = None;
 
-            // Helper: render a sortable column header label.
+            // Helper: render a sortable column header — entire cell width is clickable.
             let header_label = |ui: &mut Ui, label: &str, col: SortColumn, s: &SortState| {
                 let arrow = if s.col == col {
-                    if s.dir == SortDir::Asc {
-                        " ↑"
-                    } else {
-                        " ↓"
-                    }
+                    if s.dir == SortDir::Asc { " ↑" } else { " ↓" }
                 } else {
                     ""
                 };
+                // Interact with the full cell rect first.
+                let resp = ui.interact(ui.max_rect(), ui.id().with(label), Sense::click());
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    ui.painter().rect_filled(
+                        ui.max_rect(),
+                        2.0,
+                        Color32::from_rgba_premultiplied(0, 0, 0, 18),
+                    );
+                }
                 let text = RichText::new(format!("{label}{arrow}")).strong();
-                ui.add(Label::new(text).sense(Sense::click()))
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text(if s.col == col && s.dir == SortDir::Asc {
-                        format!("Sort by {label} descending")
-                    } else {
-                        format!("Sort by {label} ascending")
-                    })
-                    .clicked()
+                ui.label(text);
+                let tooltip = if s.col == col && s.dir == SortDir::Asc {
+                    format!("Sort by {label} descending")
+                } else {
+                    format!("Sort by {label} ascending")
+                };
+                resp.on_hover_text(tooltip).clicked()
             };
 
             TableBuilder::new(ui)
