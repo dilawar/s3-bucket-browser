@@ -14,6 +14,10 @@ pub struct FileListResponse {
     /// Files/dirs to delete (single or batch).
     pub delete: Vec<StoragePath>,
     pub upload: bool,
+    /// Path whose public URL should be copied to clipboard (sync, no network).
+    pub copy_url: Option<StoragePath>,
+    /// Path for which a 24-hour presigned URL should be generated and copied.
+    pub presign: Option<StoragePath>,
     // Selection mutations — applied by app.rs after show() returns.
     pub sel_add: Option<StoragePath>,
     pub sel_remove: Option<StoragePath>,
@@ -63,6 +67,8 @@ pub fn show(
     let open_dir:  Cell<Option<StoragePath>>  = Cell::new(None);
     let download:  Cell<Vec<StoragePath>>     = Cell::new(Vec::new());
     let delete:    Cell<Vec<StoragePath>>     = Cell::new(Vec::new());
+    let copy_url:  Cell<Option<StoragePath>>  = Cell::new(None);
+    let presign:   Cell<Option<StoragePath>>  = Cell::new(None);
     let sel_add:   Cell<Option<StoragePath>>  = Cell::new(None);
     let sel_remove:Cell<Option<StoragePath>>  = Cell::new(None);
     let sel_clear  = Cell::new(false);
@@ -284,11 +290,22 @@ pub fn show(
                                 }
                                 ui.separator();
                                 if ui
-                                    .button("⎘  Copy location")
-                                    .on_hover_text(entry.path.to_string())
+                                    .button("⎘  Copy URL")
+                                    .on_hover_text("Copy the public URL to clipboard")
                                     .clicked()
                                 {
-                                    ui.ctx().copy_text(entry.path.to_string());
+                                    copy_url.set(Some(entry.path.clone()));
+                                    ui.close_menu();
+                                }
+                                if entry.kind == EntryKind::File
+                                    && ui
+                                        .button("🔑  Copy signed URL (24 h)")
+                                        .on_hover_text(
+                                            "Generate a pre-signed URL valid for 24 hours",
+                                        )
+                                        .clicked()
+                                {
+                                    presign.set(Some(entry.path.clone()));
                                     ui.close_menu();
                                 }
                                 ui.separator();
@@ -342,6 +359,8 @@ pub fn show(
         download:   download.into_inner(),
         delete:     delete.into_inner(),
         upload:     upload.get(),
+        copy_url:   copy_url.into_inner(),
+        presign:    presign.into_inner(),
         sel_add:    sel_add.into_inner(),
         sel_remove: sel_remove.into_inner(),
         sel_clear:  sel_clear.get(),

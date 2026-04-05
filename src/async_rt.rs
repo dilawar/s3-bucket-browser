@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::Result;
 
@@ -164,6 +165,20 @@ async fn do_delete(backend: Arc<dyn Backend>, paths: Vec<StoragePath>) -> Result
         backend.delete(path).await?;
     }
     Ok(format!("Deleted {n} item{}", if n == 1 { "" } else { "s" }))
+}
+
+// ── Presign ───────────────────────────────────────────────────────────────────
+
+/// Spawn a task that generates a pre-signed GET URL valid for 24 hours.
+pub fn spawn_presign(
+    backend: Arc<dyn Backend>,
+    path: StoragePath,
+    ctx: egui::Context,
+    rt: &tokio::runtime::Handle,
+) -> TransferHandle {
+    spawn_transfer(rt, ctx, move || async move {
+        backend.presign_url(&path, Duration::from_secs(86400)).await
+    })
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────

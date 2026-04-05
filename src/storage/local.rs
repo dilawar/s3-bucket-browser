@@ -46,6 +46,12 @@ impl Backend for LocalBackend {
         Ok(())
     }
 
+    fn public_url(&self, path: &StoragePath) -> Option<String> {
+        let StoragePath::Local(p) = path else { return None; };
+        // file:// URL so it can be opened directly from a browser or file manager.
+        Some(format!("file://{}", p.display()))
+    }
+
     fn name(&self) -> &str {
         "Local"
     }

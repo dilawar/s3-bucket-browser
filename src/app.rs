@@ -37,6 +37,8 @@ pub struct S3Explorer {
     needs_initial_load: bool,
     transfer: Option<TransferHandle>,
     transfer_msg: Option<String>,
+    /// Separate handle for presign tasks so they don't block uploads/downloads.
+    presign: Option<TransferHandle>,
     rt: tokio::runtime::Handle,
 }
 
@@ -62,12 +64,14 @@ impl S3Explorer {
             needs_initial_load: true,
             transfer: None,
             transfer_msg: None,
+            presign: None,
             rt,
         }
     }
 
     /// Start in configure mode; fields are pre-filled from env vars and saved credentials.
     pub fn needs_config(rt: tokio::runtime::Handle) -> Self {
+
         Self {
             mode: Mode::Configure {
                 fields: config::ConfigFields::load(),
@@ -88,6 +92,7 @@ impl S3Explorer {
             needs_initial_load: false,
             transfer: None,
             transfer_msg: None,
+            presign: None,
             rt,
         }
     }
@@ -180,6 +185,36 @@ impl S3Explorer {
 
     fn transfer_busy(&self) -> bool {
         self.transfer.as_ref().is_some_and(|h| h.is_running())
+    }
+
+    // ── presign ───────────────────────────────────────────────────────────────
+
+    fn start_presign(&mut self, path: StoragePath, ctx: &egui::Context) {
+        let Some(backend) = &self.backend else { return };
+        self.presign = Some(async_rt::spawn_presign(
+            Arc::clone(backend),
+            path,
+            ctx.clone(),
+            &self.rt,
+        ));
+        self.transfer_msg = Some("Generating signed URL…".to_owned());
+    }
+
+    fn poll_presign(&mut self, ctx: &egui::Context) {
+        if let Some(handle) = &self.presign
+            && let Some(result) = handle.try_recv()
+        {
+            self.presign = None;
+            match result {
+                Ok(url) => {
+                    ctx.copy_text(url);
+                    self.transfer_msg = Some("✓ Signed URL copied to clipboard".to_owned());
+                }
+                Err(e) => {
+                    self.transfer_msg = Some(format!("Error: {e}"));
+                }
+            }
+        }
     }
 
     // ── navigation ────────────────────────────────────────────────────────────
@@ -302,6 +337,7 @@ impl S3Explorer {
         }
 
         self.poll_listing();
+        self.poll_presign(ctx);
         self.poll_transfer(ctx);
 
         let can_back = self.history_pos > 0;
@@ -403,6 +439,17 @@ impl S3Explorer {
             }
             if resp.sel_clear {
                 self.selection.clear();
+            }
+            if let Some(path) = resp.copy_url {
+                // Synchronous — build the URL from stored fields, no network needed.
+                let url = self.backend.as_ref()
+                    .and_then(|b| b.public_url(&path))
+                    .unwrap_or_else(|| path.to_string());
+                ctx.copy_text(url);
+                self.transfer_msg = Some("✓ URL copied to clipboard".to_owned());
+            }
+            if let Some(path) = resp.presign {
+                self.start_presign(path, ctx);
             }
             if !resp.download.is_empty() && !busy {
                 self.start_download(resp.download, ctx);

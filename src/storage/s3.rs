@@ -1,8 +1,10 @@
+use std::time::Duration;
+
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::TryStreamExt;
-use object_store::{ObjectStore, aws::AmazonS3Builder};
+use object_store::{ObjectStore, aws::AmazonS3Builder, signer::Signer as _};
 use tracing::debug;
 
 use super::backend::Backend;
@@ -11,6 +13,10 @@ use super::path::{EntryKind, StorageEntry, StoragePath, sort_entries};
 pub struct S3Backend {
     store: object_store::aws::AmazonS3,
     bucket: String,
+    /// Custom endpoint base URL (e.g. "https://s3.us-west-004.backblazeb2.com").
+    /// `None` means standard AWS S3.
+    endpoint: Option<String>,
+    region: String,
     display_name: String,
 }
 
@@ -34,6 +40,8 @@ impl S3Backend {
     pub fn from_env() -> Result<Self> {
         let bucket =
             std::env::var(ENV_BUCKET).with_context(|| format!("{ENV_BUCKET} is not set"))?;
+        let endpoint = std::env::var(ENV_ENDPOINT).ok().filter(|s| !s.is_empty());
+        let region = std::env::var(ENV_REGION).unwrap_or_else(|_| "us-east-1".to_owned());
         let store = AmazonS3Builder::from_env()
             .with_bucket_name(&bucket)
             .build()
@@ -41,6 +49,8 @@ impl S3Backend {
         Ok(Self {
             store,
             bucket: bucket.clone(),
+            endpoint,
+            region,
             display_name: format!("S3: {bucket}"),
         })
     }
@@ -73,6 +83,8 @@ impl S3Backend {
         Ok(Self {
             store,
             bucket: bucket.to_owned(),
+            endpoint: endpoint.map(str::to_owned),
+            region: region.to_owned(),
             display_name: format!("S3: {bucket}"),
         })
     }
@@ -200,6 +212,32 @@ impl Backend for S3Backend {
                 .with_context(|| format!("deleting s3://{bucket}/{prefix}"))?;
         }
         Ok(())
+    }
+
+    fn public_url(&self, path: &StoragePath) -> Option<String> {
+        let StoragePath::S3 { bucket, prefix } = path else { return None; };
+        let key = prefix.trim_end_matches('/');
+        Some(match &self.endpoint {
+            // Custom endpoint (Backblaze, MinIO, …): path-style URL.
+            Some(ep) => format!("{}/{}/{}", ep.trim_end_matches('/'), bucket, key),
+            // AWS: virtual-hosted style with region.
+            None => format!(
+                "https://{}.s3.{}.amazonaws.com/{}",
+                bucket, self.region, key
+            ),
+        })
+    }
+
+    async fn presign_url(&self, path: &StoragePath, expires: Duration) -> Result<String> {
+        let StoragePath::S3 { prefix, .. } = path else {
+            bail!("not an S3 path");
+        };
+        let os_path = object_store::path::Path::from(prefix.as_str());
+        let url = self.store
+            .signed_url(http::Method::GET, &os_path, expires)
+            .await
+            .context("generating presigned URL")?;
+        Ok(url.to_string())
     }
 
     fn name(&self) -> &str {

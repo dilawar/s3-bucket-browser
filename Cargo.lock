@@ -3569,6 +3569,7 @@ dependencies = [
  "egui",
  "egui_extras",
  "futures",
+ "http",
  "mime_guess",
  "object_store",
  "rand 0.8.5",
