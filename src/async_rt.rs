@@ -63,6 +63,11 @@ impl TransferHandle {
     pub fn is_running(&self) -> bool {
         !self.join.is_finished() && self.slot.lock().unwrap().is_none()
     }
+
+    /// Abort the underlying task immediately.
+    pub fn cancel(&self) {
+        self.join.abort();
+    }
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────

@@ -524,6 +524,7 @@ impl S3Explorer {
             }
         });
 
+        let mut cancel_clicked = false;
         TopBottomPanel::bottom("status").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let backend_name = self.backend.as_ref().map_or("—", |b| b.name());
@@ -543,6 +544,13 @@ impl S3Explorer {
                     ui.separator();
                     ui.spinner();
                     ui.label(RichText::new("Transferring…").size(13.0).color(muted));
+                    if ui
+                        .button(RichText::new("✕ Cancel").size(13.0))
+                        .on_hover_text("Abort the current upload")
+                        .clicked()
+                    {
+                        cancel_clicked = true;
+                    }
                 } else if let Some(msg) = &self.transfer_msg {
                     ui.separator();
                     // Use icon prefix so status is never conveyed by colour alone.
@@ -559,6 +567,14 @@ impl S3Explorer {
                 }
             });
         });
+
+        if cancel_clicked {
+            if let Some(handle) = &self.transfer {
+                handle.cancel();
+            }
+            self.transfer = None;
+            self.transfer_msg = Some("Upload cancelled.".to_owned());
+        }
 
         let max_sidebar = ctx.screen_rect().width() / 2.0;
         SidePanel::left("sidebar")
