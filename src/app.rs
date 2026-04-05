@@ -5,6 +5,7 @@ use egui::{CentralPanel, Color32, RichText, SidePanel, TopBottomPanel};
 use tracing::info;
 
 use crate::async_rt::{self, ListingHandle, TransferHandle};
+use crate::download;
 use crate::storage::{Backend, StorageEntry, StoragePath};
 use crate::ui::{config, file_list, sidebar, toolbar};
 
@@ -39,7 +40,15 @@ pub struct S3Explorer {
     transfer_msg: Option<String>,
     /// Separate handle for presign tasks so they don't block uploads/downloads.
     presign: Option<TransferHandle>,
+    /// Pending ZIP download that is awaiting user confirmation (large archive).
+    zip_confirm: Option<ZipConfirm>,
     rt: tokio::runtime::Handle,
+}
+
+struct ZipConfirm {
+    paths: Vec<StoragePath>,
+    current_path: StoragePath,
+    size_bytes: u64,
 }
 
 impl S3Explorer {
@@ -65,6 +74,7 @@ impl S3Explorer {
             transfer: None,
             transfer_msg: None,
             presign: None,
+            zip_confirm: None,
             rt,
         }
     }
@@ -93,6 +103,7 @@ impl S3Explorer {
             transfer: None,
             transfer_msg: None,
             presign: None,
+            zip_confirm: None,
             rt,
         }
     }
@@ -131,7 +142,7 @@ impl S3Explorer {
     fn start_download(&mut self, paths: Vec<StoragePath>, ctx: &egui::Context) {
         let Some(backend) = &self.backend else { return };
         self.transfer_msg = None;
-        self.transfer = Some(async_rt::spawn_download(
+        self.transfer = Some(download::spawn_download(
             Arc::clone(backend),
             paths,
             ctx.clone(),
@@ -185,6 +196,72 @@ impl S3Explorer {
 
     fn transfer_busy(&self) -> bool {
         self.transfer.as_ref().is_some_and(|h| h.is_running())
+    }
+
+    // ── ZIP download with size pre-flight ─────────────────────────────────────
+
+    fn start_zip_download(&mut self, paths: Vec<StoragePath>, ctx: &egui::Context) {
+        let Some(backend) = &self.backend else { return };
+        let current = self.current_path.clone();
+        self.transfer_msg = None;
+        self.transfer = Some(download::spawn_download_zip(
+            Arc::clone(backend),
+            paths,
+            current,
+            ctx.clone(),
+            &self.rt,
+        ));
+    }
+
+    /// Estimate the total download size; if it exceeds the threshold, store a
+    /// confirmation request instead of starting the download immediately.
+    fn request_zip_download(&mut self, paths: Vec<StoragePath>, ctx: &egui::Context) {
+        let Some(backend) = &self.backend else { return };
+        let backend = Arc::clone(backend);
+        let paths_clone = paths.clone();
+        let current = self.current_path.clone();
+        let ctx2 = ctx.clone();
+        let rt = self.rt.clone();
+
+        // Run size estimation in background; result lands on next frame.
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None::<Option<u64>>));
+        let slot2 = std::sync::Arc::clone(&slot);
+        rt.spawn(async move {
+            let size = download::estimate_size(backend, &paths_clone).await.ok().flatten();
+            *slot2.lock().unwrap() = Some(size);
+            ctx2.request_repaint();
+        });
+
+        // Immediately kick off if we can't estimate (unknown sizes); otherwise
+        // we wait one frame for the result and show confirmation if needed.
+        // For simplicity: if any selected item is a plain file (size in entries),
+        // compute inline from the entries list to avoid the extra round-trip.
+        let known_total: Option<u64> = paths.iter().try_fold(0u64, |acc, p| {
+            if p.is_dir() {
+                None // directory size unknown without listing
+            } else {
+                self.entries.iter()
+                    .find(|e| &e.path == p)
+                    .and_then(|e| e.size)
+                    .map(|s| acc.saturating_add(s))
+            }
+        });
+
+        if let Some(total) = known_total {
+            if total > download::ZIP_WARN_BYTES {
+                self.zip_confirm = Some(ZipConfirm {
+                    paths,
+                    current_path: current,
+                    size_bytes: total,
+                });
+            } else {
+                self.start_zip_download(paths, ctx);
+            }
+        } else {
+            // Can't determine size without a recursive list — just start.
+            // The background task above is effectively unused in this path.
+            self.start_zip_download(paths, ctx);
+        }
     }
 
     // ── presign ───────────────────────────────────────────────────────────────
@@ -340,6 +417,46 @@ impl S3Explorer {
         self.poll_presign(ctx);
         self.poll_transfer(ctx);
 
+        // ── Large-ZIP confirmation modal ──────────────────────────────────────
+        if self.zip_confirm.is_some() {
+            let mut confirmed = false;
+            let mut cancelled = false;
+            egui::Modal::new(egui::Id::new("zip_confirm")).show(ctx, |ui| {
+                ui.set_max_width(360.0);
+                let size_mb = self.zip_confirm.as_ref().unwrap().size_bytes as f64 / 1_048_576.0;
+                ui.heading("Large download");
+                ui.add_space(8.0);
+                ui.label(format!(
+                    "The selected items total {size_mb:.0} MB.\n\
+                     Downloading a large archive may take a while and use significant memory.\n\n\
+                     Continue anyway?"
+                ));
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui.button(egui::RichText::new("Download").strong()).clicked() {
+                        confirmed = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancelled = true;
+                    }
+                });
+            });
+            if confirmed {
+                let ZipConfirm { paths, current_path, .. } = self.zip_confirm.take().unwrap();
+                let Some(backend) = &self.backend else { return };
+                self.transfer_msg = None;
+                self.transfer = Some(download::spawn_download_zip(
+                    Arc::clone(backend),
+                    paths,
+                    current_path,
+                    ctx.clone(),
+                    &self.rt,
+                ));
+            } else if cancelled {
+                self.zip_confirm = None;
+            }
+        }
+
         let can_back = self.history_pos > 0;
         let can_forward = self.history_pos + 1 < self.history.len();
         let can_up = self.current_path.parent().is_some();
@@ -455,16 +572,7 @@ impl S3Explorer {
                 self.start_download(resp.download, ctx);
             }
             if !resp.download_zip.is_empty() && !busy {
-                let current = self.current_path.clone();
-                let Some(backend) = &self.backend else { return };
-                self.transfer_msg = None;
-                self.transfer = Some(async_rt::spawn_download_zip(
-                    Arc::clone(backend),
-                    resp.download_zip,
-                    current,
-                    ctx.clone(),
-                    &self.rt,
-                ));
+                self.request_zip_download(resp.download_zip, ctx);
             }
             if !resp.delete.is_empty() && !busy {
                 self.start_delete(resp.delete, ctx);
