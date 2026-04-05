@@ -178,6 +178,17 @@ impl S3Explorer {
         ));
     }
 
+    fn start_upload_folder(&mut self, ctx: &egui::Context) {
+        let Some(backend) = &self.backend else { return };
+        self.transfer_msg = None;
+        self.transfer = Some(async_rt::spawn_upload_folder(
+            Arc::clone(backend),
+            self.current_path.clone(),
+            ctx.clone(),
+            &self.rt,
+        ));
+    }
+
     fn poll_transfer(&mut self, ctx: &egui::Context) {
         if let Some(handle) = &self.transfer
             && let Some(result) = handle.try_recv()
@@ -608,6 +619,9 @@ impl S3Explorer {
             }
             if resp.upload && !busy {
                 self.start_upload(ctx);
+            }
+            if resp.upload_folder && !busy {
+                self.start_upload_folder(ctx);
             }
         });
     }

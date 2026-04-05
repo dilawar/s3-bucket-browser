@@ -54,6 +54,7 @@ pub struct FileListResponse {
     /// Files/dirs to delete (single or batch).
     pub delete: Vec<StoragePath>,
     pub upload: bool,
+    pub upload_folder: bool,
     /// Path whose public URL should be copied to clipboard (sync, no network).
     pub copy_url: Option<StoragePath>,
     /// Path for which a 24-hour presigned URL should be generated and copied.
@@ -105,6 +106,7 @@ pub fn show(
 ) -> FileListResponse {
     // ── All output state ──────────────────────────────────────────────────────
     let upload = Cell::new(false);
+    let upload_folder = Cell::new(false);
     let open_dir: Cell<Option<StoragePath>> = Cell::new(None);
     let download: Cell<Vec<StoragePath>> = Cell::new(Vec::new());
     let download_zip: Cell<Vec<StoragePath>> = Cell::new(Vec::new());
@@ -121,29 +123,47 @@ pub fn show(
         upload_item(ui, transfer_busy, &upload);
     });
 
-    // ── Layout: upload link pinned to bottom ─────────────────────────────────
+    // ── Layout: upload links pinned to bottom ────────────────────────────────
     ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
         ui.add_space(6.0);
-        let color = if transfer_busy {
-            Color32::from_gray(160)
-        } else {
-            Color32::from_rgb(37, 99, 235)
-        };
-        let resp = ui
-            .add(
-                Label::new(
-                    RichText::new("+ Upload file")
-                        .color(color)
-                        .size(14.0)
-                        .underline(),
+        ui.horizontal(|ui| {
+            let link_color = if transfer_busy {
+                Color32::from_gray(160)
+            } else {
+                Color32::from_rgb(37, 99, 235)
+            };
+            let file_resp = ui
+                .add(
+                    Label::new(
+                        RichText::new("+ Upload file")
+                            .color(link_color)
+                            .size(14.0)
+                            .underline(),
+                    )
+                    .sense(Sense::click()),
                 )
-                .sense(Sense::click()),
-            )
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text("Upload a file to the current location");
-        if resp.clicked() && !transfer_busy {
-            upload.set(true);
-        }
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Upload a file to the current location");
+            if file_resp.clicked() && !transfer_busy {
+                upload.set(true);
+            }
+            ui.label(RichText::new("·").color(Color32::from_gray(180)).size(14.0));
+            let folder_resp = ui
+                .add(
+                    Label::new(
+                        RichText::new("+ Upload folder")
+                            .color(link_color)
+                            .size(14.0)
+                            .underline(),
+                    )
+                    .sense(Sense::click()),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Upload all files inside a folder to the current location");
+            if folder_resp.clicked() && !transfer_busy {
+                upload_folder.set(true);
+            }
+        });
         ui.add_space(4.0);
         ui.separator();
 
@@ -489,6 +509,7 @@ pub fn show(
         download_zip: download_zip.into_inner(),
         delete: delete.into_inner(),
         upload: upload.get(),
+        upload_folder: upload_folder.get(),
         copy_url: copy_url.into_inner(),
         presign: presign.into_inner(),
         sel_add: sel_add.into_inner(),
