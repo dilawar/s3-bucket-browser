@@ -454,6 +454,18 @@ impl S3Explorer {
             if !resp.download.is_empty() && !busy {
                 self.start_download(resp.download, ctx);
             }
+            if !resp.download_zip.is_empty() && !busy {
+                let current = self.current_path.clone();
+                let Some(backend) = &self.backend else { return };
+                self.transfer_msg = None;
+                self.transfer = Some(async_rt::spawn_download_zip(
+                    Arc::clone(backend),
+                    resp.download_zip,
+                    current,
+                    ctx.clone(),
+                    &self.rt,
+                ));
+            }
             if !resp.delete.is_empty() && !busy {
                 self.start_delete(resp.delete, ctx);
             }

@@ -11,6 +11,8 @@ pub struct FileListResponse {
     pub open_dir: Option<StoragePath>,
     /// Files/dirs to download (single or batch).
     pub download: Vec<StoragePath>,
+    /// Selection to pack into a single ZIP file.
+    pub download_zip: Vec<StoragePath>,
     /// Files/dirs to delete (single or batch).
     pub delete: Vec<StoragePath>,
     pub upload: bool,
@@ -63,10 +65,11 @@ pub fn show(
     transfer_busy: bool,
 ) -> FileListResponse {
     // ── All output state ──────────────────────────────────────────────────────
-    let upload     = Cell::new(false);
-    let open_dir:  Cell<Option<StoragePath>>  = Cell::new(None);
-    let download:  Cell<Vec<StoragePath>>     = Cell::new(Vec::new());
-    let delete:    Cell<Vec<StoragePath>>     = Cell::new(Vec::new());
+    let upload        = Cell::new(false);
+    let open_dir:     Cell<Option<StoragePath>>  = Cell::new(None);
+    let download:     Cell<Vec<StoragePath>>     = Cell::new(Vec::new());
+    let download_zip: Cell<Vec<StoragePath>>     = Cell::new(Vec::new());
+    let delete:       Cell<Vec<StoragePath>>     = Cell::new(Vec::new());
     let copy_url:  Cell<Option<StoragePath>>  = Cell::new(None);
     let presign:   Cell<Option<StoragePath>>  = Cell::new(None);
     let sel_add:   Cell<Option<StoragePath>>  = Cell::new(None);
@@ -139,7 +142,7 @@ pub fn show(
                                 !transfer_busy,
                                 Button::new(format!("⬇ Download ({n_files})")),
                             )
-                            .on_hover_text("Download selected files")
+                            .on_hover_text("Download selected files individually")
                             .clicked()
                     {
                         let paths: Vec<_> = selection
@@ -150,6 +153,16 @@ pub fn show(
                             .cloned()
                             .collect();
                         download.set(paths);
+                    }
+                    if ui
+                        .add_enabled(
+                            !transfer_busy,
+                            Button::new("⬇ Download as ZIP"),
+                        )
+                        .on_hover_text("Pack all selected items into a single ZIP file")
+                        .clicked()
+                    {
+                        download_zip.set(selection.iter().cloned().collect());
                     }
                     if ui
                         .add_enabled(
@@ -356,9 +369,10 @@ pub fn show(
     });
 
     FileListResponse {
-        open_dir:   open_dir.into_inner(),
-        download:   download.into_inner(),
-        delete:     delete.into_inner(),
+        open_dir:     open_dir.into_inner(),
+        download:     download.into_inner(),
+        download_zip: download_zip.into_inner(),
+        delete:       delete.into_inner(),
         upload:     upload.get(),
         copy_url:   copy_url.into_inner(),
         presign:    presign.into_inner(),

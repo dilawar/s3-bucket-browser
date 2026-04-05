@@ -21,6 +21,24 @@ pub trait Backend: Send + Sync + 'static {
     /// recursively delete every object under that prefix.
     async fn delete(&self, path: &StoragePath) -> Result<()>;
 
+    /// Recursively list all *files* under `path` (directories are expanded).
+    /// The default implementation calls `list()` repeatedly; backends may
+    /// override this with a more efficient single-request approach.
+    async fn list_recursive(&self, path: &StoragePath) -> Result<Vec<StorageEntry>> {
+        use super::path::EntryKind;
+        let mut files = Vec::new();
+        let mut dirs = vec![path.clone()];
+        while let Some(dir) = dirs.pop() {
+            for entry in self.list(&dir).await? {
+                match entry.kind {
+                    EntryKind::Directory => dirs.push(entry.path),
+                    EntryKind::File => files.push(entry),
+                }
+            }
+        }
+        Ok(files)
+    }
+
     /// Return a public (unauthenticated) URL for `path`, if the backend
     /// can construct one without a network call. Returns `None` for backends
     /// that don't have a stable public URL (e.g. private buckets).

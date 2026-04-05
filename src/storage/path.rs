@@ -73,6 +73,14 @@ impl StoragePath {
         }
     }
 
+    /// Returns `true` if this path represents a directory (S3 prefix or local dir).
+    pub fn is_dir(&self) -> bool {
+        match self {
+            Self::S3 { prefix, .. } => prefix.is_empty() || prefix.ends_with('/'),
+            Self::Local(p) => p.is_dir(),
+        }
+    }
+
     /// One level up, or `None` if already at the root.
     pub fn parent(&self) -> Option<Self> {
         match self {
