@@ -553,20 +553,26 @@ impl S3Explorer {
                         None => "Transferring…".to_owned(),
                     };
                     ui.label(RichText::new(label).size(13.0).color(muted));
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("Cancel upload")
-                                    .size(13.0)
-                                    .color(Color32::WHITE),
-                            )
-                            .fill(Color32::from_rgb(180, 40, 40)),
-                        )
-                        .on_hover_text("Abort the current upload")
-                        .clicked()
-                    {
-                        cancel_clicked = true;
-                    }
+                    // Float cancel button to the far right.
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Cancel upload")
+                                            .size(13.0)
+                                            .color(Color32::WHITE),
+                                    )
+                                    .fill(Color32::from_rgb(180, 40, 40)),
+                                )
+                                .on_hover_text("Abort the current upload")
+                                .clicked()
+                            {
+                                cancel_clicked = true;
+                            }
+                        },
+                    );
                 } else if let Some(msg) = &self.transfer_msg {
                     ui.separator();
                     // Use icon prefix so status is never conveyed by colour alone.
