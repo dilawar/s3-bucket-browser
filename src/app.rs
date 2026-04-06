@@ -531,7 +531,7 @@ impl S3Explorer {
                         .filter(|s| !s.is_empty());
                     let label = match &progress {
                         Some(name) => format!("Uploading  {name}"),
-                        None => "Transferring…".to_owned(),
+                        None => "Working…".to_owned(),
                     };
                     ui.label(RichText::new(label).size(13.0).color(muted));
                     // Float cancel button to the far right.
