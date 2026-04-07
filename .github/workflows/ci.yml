@@ -61,3 +61,87 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --target ${{ matrix.target }} -- -D warnings
+
+  # Test Debian and RPM package builds (Linux only)
+  package:
+    name: Package Build — Linux x86_64
+    runs-on: ubuntu-22.04
+    needs: check
+    if: runner.os == 'Linux'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: x86_64-unknown-linux-gnu
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libwayland-dev \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libatk1.0-dev \
+            libpango1.0-dev \
+            libgdk-pixbuf2.0-dev \
+            libegl1-mesa-dev \
+            libgl1-mesa-dev \
+            libssl-dev \
+            pkg-config \
+            rpm
+
+      - name: Install packaging tools
+        run: |
+          cargo install cargo-deb
+          cargo install cargo-generate-rpm
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Build Debian package
+        run: cargo deb --output target/debian/s3-explorer.deb
+        env:
+          CARGO_DEB_OUTPUT: target/debian/s3-explorer.deb
+
+      - name: Build RPM package
+        run: cargo generate-rpm
+        working-directory: .
+
+      - name: Verify Debian package
+        run: |
+          echo "Checking Debian package..."
+          ls -lh target/debian/s3-explorer.deb
+          dpkg-deb --info target/debian/s3-explorer.deb
+          dpkg-deb --contents target/debian/s3-explorer.deb
+
+      - name: Verify RPM package
+        run: |
+          echo "Checking RPM package..."
+          ls -lh target/generate-rpm/
+          rpm -qpil target/generate-rpm/*.rpm
+
+      - name: Upload Debian package artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s3-explorer-debian
+          path: target/debian/*.deb
+          if-no-files-found: error
+
+      - name: Upload RPM package artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s3-explorer-rpm
+          path: target/generate-rpm/*.rpm
+          if-no-files-found: error

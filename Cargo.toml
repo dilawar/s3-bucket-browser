@@ -1,6 +1,6 @@
 [package]
 name = "s3-explorer"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "A native GUI for browsing S3-compatible buckets (AWS S3, Backblaze B2, MinIO, …)"
 license = "MIT"
@@ -24,7 +24,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 strum = { version = "0.27", features = ["derive"] }
 async-trait = "0.1"
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono = { version = "0.4", default-features = false, features = [
+    "std",
+    "clock",
+] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 object_store = { version = "0.11", features = ["aws"] }
@@ -45,3 +48,98 @@ opt-level = 2
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# Packaging:
+# To build packages, you need to install cargo-deb and cargo-generate-rpm:
+#   cargo install cargo-deb
+#   cargo install cargo-generate-rpm
+# Then run:
+#   just package-deb    # Creates .deb package
+#   just package-rpm    # Creates .rpm package
+#   just package-all    # Creates both packages
+
+# Debian package configuration (cargo-deb)
+[package.metadata.deb]
+maintainer = "Dilawar Singh <dilawars@gmail.com>"
+copyright = "2026, Dilawar Singh <dilawars@gmail.com>"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+A native GUI for browsing S3-compatible buckets \
+(AWS S3, Backblaze B2, MinIO, …)"""
+section = "utility"
+priority = "optional"
+assets = [
+    [
+        "target/release/s3-explorer",
+        "usr/bin/",
+        "755",
+    ],
+    [
+        "README.md",
+        "usr/share/doc/s3-explorer/README",
+        "644",
+    ],
+    [
+        "assets/s3-explorer.desktop",
+        "usr/share/applications/s3-explorer.desktop",
+        "644",
+    ],
+    [
+        "assets/icons/hicolor/16x16/apps/s3-explorer.png",
+        "usr/share/icons/hicolor/16x16/apps/s3-explorer.png",
+        "644",
+    ],
+    [
+        "assets/icons/hicolor/32x32/apps/s3-explorer.png",
+        "usr/share/icons/hicolor/32x32/apps/s3-explorer.png",
+        "644",
+    ],
+    [
+        "assets/icons/hicolor/48x48/apps/s3-explorer.png",
+        "usr/share/icons/hicolor/48x48/apps/s3-explorer.png",
+        "644",
+    ],
+    [
+        "assets/icons/hicolor/64x64/apps/s3-explorer.png",
+        "usr/share/icons/hicolor/64x64/apps/s3-explorer.png",
+        "644",
+    ],
+    [
+        "assets/icons/hicolor/128x128/apps/s3-explorer.png",
+        "usr/share/icons/hicolor/128x128/apps/s3-explorer.png",
+        "644",
+    ],
+    [
+        "assets/icons/hicolor/256x256/apps/s3-explorer.png",
+        "usr/share/icons/hicolor/256x256/apps/s3-explorer.png",
+        "644",
+    ],
+    [
+        "assets/icons/hicolor/512x512/apps/s3-explorer.png",
+        "usr/share/icons/hicolor/512x512/apps/s3-explorer.png",
+        "644",
+    ],
+    [
+        "assets/icons/hicolor/scalable/apps/s3-explorer.svg",
+        "usr/share/icons/hicolor/scalable/apps/s3-explorer.svg",
+        "644",
+    ],
+]
+depends = "$auto"
+
+# RPM package configuration (cargo-generate-rpm)
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/s3-explorer", dest = "/usr/bin/s3-explorer", mode = "0755" },
+    { source = "README.md", dest = "/usr/share/doc/s3-explorer/README", mode = "0644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/doc/s3-explorer/LICENSE", mode = "0644", doc = true },
+    { source = "assets/s3-explorer.desktop", dest = "/usr/share/applications/s3-explorer.desktop", mode = "0644" },
+    { source = "assets/icons/hicolor/16x16/apps/s3-explorer.png", dest = "/usr/share/icons/hicolor/16x16/apps/s3-explorer.png", mode = "0644" },
+    { source = "assets/icons/hicolor/32x32/apps/s3-explorer.png", dest = "/usr/share/icons/hicolor/32x32/apps/s3-explorer.png", mode = "0644" },
+    { source = "assets/icons/hicolor/48x48/apps/s3-explorer.png", dest = "/usr/share/icons/hicolor/48x48/apps/s3-explorer.png", mode = "0644" },
+    { source = "assets/icons/hicolor/64x64/apps/s3-explorer.png", dest = "/usr/share/icons/hicolor/64x64/apps/s3-explorer.png", mode = "0644" },
+    { source = "assets/icons/hicolor/128x128/apps/s3-explorer.png", dest = "/usr/share/icons/hicolor/128x128/apps/s3-explorer.png", mode = "0644" },
+    { source = "assets/icons/hicolor/256x256/apps/s3-explorer.png", dest = "/usr/share/icons/hicolor/256x256/apps/s3-explorer.png", mode = "0644" },
+    { source = "assets/icons/hicolor/512x512/apps/s3-explorer.png", dest = "/usr/share/icons/hicolor/512x512/apps/s3-explorer.png", mode = "0644" },
+    { source = "assets/icons/hicolor/scalable/apps/s3-explorer.svg", dest = "/usr/share/icons/hicolor/scalable/apps/s3-explorer.svg", mode = "0644" },
+]

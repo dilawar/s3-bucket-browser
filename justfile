@@ -69,3 +69,20 @@ outdated:
 clean:
     cargo clean
     rm -rf pkg/
+
+# ── Packaging ─────────────────────────────────────────────────────────────────
+
+# Generate icons from SVG source (requires ImageMagick)
+generate-icons:
+    ./assets/generate-icons.sh
+
+# Build Debian package (.deb)
+package-deb:
+    cargo deb
+
+# Build RPM package (.rpm)
+package-rpm:
+    cargo generate-rpm
+
+# Build all packages
+package-all: package-deb package-rpm
