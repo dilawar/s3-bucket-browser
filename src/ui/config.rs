@@ -61,9 +61,19 @@ impl ConfigFields {
 
     // ── URI ↔ fields ─────────────────────────────────────────────────────────
 
-    /// Build a `s3://` URI from the current field values.
+    /// Build the canonical `s3://` URI from the current field values.
+    ///
+    /// The `s3://` scheme is the de-facto standard for S3 object URIs (used by
+    /// AWS CLI, rclone, s5cmd, etc.) and follows RFC 3986 general URI syntax:
+    ///   `s3://bucket/`
+    ///   `s3://bucket/?endpoint=<pct-encoded>&region=<region>`
+    ///
+    /// Returns an empty string when the bucket name is not yet set.
     pub fn compute_uri(&self) -> String {
         let bucket = self.bucket.trim();
+        if bucket.is_empty() {
+            return String::new();
+        }
         let endpoint = self.endpoint.trim();
         let region = self.region.trim();
 
@@ -83,13 +93,18 @@ impl ConfigFields {
     }
 
     /// Parse `connection_uri` and update the individual fields.
-    /// Handles two input forms:
-    /// - `s3://bucket/?endpoint=<encoded>&region=<region>`
-    /// - `https://endpoint/bucket`  (also `http://`)
+    ///
+    /// Recognised schemes (case-insensitive per RFC 3986 §3.1):
+    ///   - `s3://bucket/`                                          (canonical)
+    ///   - `s3://bucket/?endpoint=<pct-encoded>&region=<region>`   (canonical with options)
+    ///   - `https://endpoint/bucket`  (also `http://`)             (convenience — normalised on focus-loss)
     pub fn parse_uri_into_fields(&mut self) {
         let uri = self.connection_uri.trim().to_owned();
+        // RFC 3986 §3.1: scheme is case-insensitive; lowercase for matching only.
+        let lower = uri.to_ascii_lowercase();
 
-        if let Some(rest) = uri.strip_prefix("s3://") {
+        if lower.starts_with("s3://") {
+            let rest = &uri[5..]; // preserve original casing after the scheme
             let (authority, query) = match rest.split_once('?') {
                 Some((a, q)) => (a, q),
                 None => (rest, ""),
@@ -102,25 +117,24 @@ impl ConfigFields {
                     let decoded = urlencoding::decode(v)
                         .map(|c| c.into_owned())
                         .unwrap_or_else(|_| v.to_owned());
-                    match k {
+                    match k.to_ascii_lowercase().as_str() {
                         "endpoint" => self.endpoint = decoded,
-                        "region" => self.region = decoded,
-                        _ => {}
+                        "region"   => self.region   = decoded,
+                        _          => {}
                     }
                 }
             }
-        } else {
-            // Accept `https://endpoint/bucket` and `http://endpoint/bucket`.
-            let (scheme, rest) = if let Some(r) = uri.strip_prefix("https://") {
-                ("https", r)
-            } else if let Some(r) = uri.strip_prefix("http://") {
-                ("http", r)
+        } else if lower.starts_with("https://") || lower.starts_with("http://") {
+            // Convenience input: derive scheme from the lowercased copy, host/bucket
+            // from the original to preserve casing.
+            let (scheme, rest) = if lower.starts_with("https://") {
+                ("https", &uri[8..])
             } else {
-                return; // unrecognised scheme — leave fields unchanged
+                ("http", &uri[7..])
             };
 
             let mut parts = rest.splitn(2, '/');
-            let host = parts.next().unwrap_or("");
+            let host   = parts.next().unwrap_or("");
             let bucket = parts.next().unwrap_or("").trim_end_matches('/');
 
             self.endpoint = format!("{scheme}://{host}");
@@ -128,9 +142,8 @@ impl ConfigFields {
                 self.bucket = bucket.to_owned();
             }
 
-            // Auto-extract region from Backblaze B2 hostnames:
-            // s3.<region>.backblazeb2.com
-            if let Some(inner) = host.strip_suffix(".backblazeb2.com")
+            // Auto-detect region from Backblaze B2 hostnames: s3.<region>.backblazeb2.com
+            if let Some(inner) = host.to_ascii_lowercase().strip_suffix(".backblazeb2.com")
                 && let Some(region) = inner.strip_prefix("s3.")
             {
                 self.region = region.to_owned();
@@ -180,6 +193,7 @@ pub fn show(ui: &mut Ui, f: &mut ConfigFields, error: Option<&str>) -> ConfigRes
         ui.add_space(12.0);
 
         let mut uri_changed    = false;
+        let mut uri_lost_focus = false;
         let mut fields_changed = false;
 
         // ── Connection + secondary fields ─────────────────────────────────────
@@ -187,14 +201,15 @@ pub fn show(ui: &mut Ui, f: &mut ConfigFields, error: Option<&str>) -> ConfigRes
             .num_columns(2)
             .spacing([12.0, 8.0])
             .show(ui, |ui| {
-                ui.label("Connection URI *");
+                ui.label("Connection URI");
                 let r = ui.add(
                     TextEdit::singleline(&mut f.connection_uri)
-                        .hint_text("s3://bucket/  ·  https://endpoint/bucket  ·  s3://bucket/?endpoint=…&region=…")
+                        .hint_text("s3://bucket/  ·  s3://bucket/?endpoint=https%3A%2F%2F…&region=…  ·  https://endpoint/bucket")
                         .desired_width(420.0)
                         .font(egui::TextStyle::Monospace),
                 );
-                if r.changed() { uri_changed = true; }
+                if r.changed()    { uri_changed    = true; }
+                if r.lost_focus() { uri_lost_focus = true; }
                 ui.end_row();
 
                 ui.label("Bucket *");
@@ -208,23 +223,32 @@ pub fn show(ui: &mut Ui, f: &mut ConfigFields, error: Option<&str>) -> ConfigRes
                 ui.label("Endpoint");
                 if ui.add(
                     TextEdit::singleline(&mut f.endpoint)
-                        .hint_text("https://… (leave blank for AWS S3)"),
+                        .hint_text("https://… (leave blank for AWS S3)")
+                        .desired_width(280.0),
                 ).changed() { fields_changed = true; }
                 ui.end_row();
 
                 ui.label("Region");
                 if ui.add(
                     TextEdit::singleline(&mut f.region)
-                        .hint_text("us-east-1"),
+                        .hint_text("us-east-1")
+                        .desired_width(280.0),
                 ).changed() { fields_changed = true; }
                 ui.end_row();
             });
 
-        // Bidirectional sync — only one side can change per frame.
+        // Parse the URI field whenever its content changes.
         if uri_changed {
             f.parse_uri_into_fields();
-        } else if fields_changed {
-            f.connection_uri = f.compute_uri();
+        }
+        // Normalise to canonical s3:// form:
+        //   • when the URI field loses focus (converts any https:// convenience input), or
+        //   • when a derived field (bucket/endpoint/region) changes directly.
+        if uri_lost_focus || fields_changed {
+            let canonical = f.compute_uri();
+            if !canonical.is_empty() {
+                f.connection_uri = canonical;
+            }
         }
 
         ui.add_space(6.0);
