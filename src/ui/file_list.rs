@@ -3,6 +3,7 @@ use std::collections::HashSet;
 
 use egui::{Button, Color32, Label, RichText, Sense, Ui};
 use egui_extras::{Column, TableBuilder};
+use egui_phosphor::regular as ph;
 
 use crate::storage::{EntryKind, StorageEntry, StoragePath, human_size};
 
@@ -237,7 +238,7 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                         && ui
                             .add_enabled(
                                 !transfer_busy,
-                                Button::new(format!("⬇ Download ({n_files})")),
+                                Button::new(format!("{} Download ({n_files})", ph::DOWNLOAD_SIMPLE)),
                             )
                             .on_hover_text("Download selected files individually")
                             .clicked()
@@ -254,7 +255,7 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                         download.set(paths);
                     }
                     if ui
-                        .add_enabled(!transfer_busy, Button::new("⬇ Download as ZIP"))
+                        .add_enabled(!transfer_busy, Button::new(format!("{} Download as ZIP", ph::DOWNLOAD_SIMPLE)))
                         .on_hover_text("Pack all selected items into a single ZIP file")
                         .clicked()
                     {
@@ -263,7 +264,7 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                     if ui
                         .add_enabled(
                             !transfer_busy,
-                            Button::new(format!("🗑 Delete ({n})"))
+                            Button::new(format!("{} Delete ({n})", ph::TRASH))
                                 .fill(Color32::from_rgb(180, 40, 40)),
                         )
                         .on_hover_text("Delete all selected items")
@@ -272,7 +273,7 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                         delete.set(selection.iter().cloned().collect());
                     }
                     if ui
-                        .button("✕ Clear")
+                        .button(format!("{} Clear", ph::X))
                         .on_hover_text("Clear selection")
                         .clicked()
                     {
@@ -290,7 +291,7 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                 return;
             }
             if let Some(msg) = error {
-                ui.label(RichText::new(format!("✗  {msg}")).color(Color32::from_rgb(180, 30, 30)));
+                ui.label(RichText::new(format!("{}  {msg}", ph::X_CIRCLE)).color(Color32::from_rgb(180, 30, 30)));
                 return;
             }
 
@@ -329,8 +330,8 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
 
             // Helper: render a sortable column header — entire cell width is clickable.
             let header_label = |ui: &mut Ui, label: &str, col: SortColumn, s: &SortState| {
-                let arrow = if s.col == col {
-                    if s.dir == SortDir::Asc { " ↑" } else { " ↓" }
+                let arrow: &str = if s.col == col {
+                    if s.dir == SortDir::Asc { ph::ARROW_UP } else { ph::ARROW_DOWN }
                 } else {
                     ""
                 };
@@ -344,7 +345,9 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                         Color32::from_rgba_premultiplied(0, 0, 0, 18),
                     );
                 }
-                let text = RichText::new(format!("{label}{arrow}")).strong();
+                let text = RichText::new(
+                    if arrow.is_empty() { label.to_owned() } else { format!("{label} {arrow}") }
+                ).strong();
                 ui.label(text);
                 let tooltip = if s.col == col && s.dir == SortDir::Asc {
                     format!("Sort by {label} descending")
@@ -444,15 +447,15 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                             // Right-click context menu
                             resp.context_menu(|ui| {
                                 if entry.kind == EntryKind::File
-                                    && ui.button("⬇ Download").clicked()
+                                    && ui.button(format!("{} Download", ph::DOWNLOAD_SIMPLE)).clicked()
                                 {
                                     download.set(vec![entry.path.clone()]);
                                     ui.close_menu();
                                 }
                                 let del_label = if is_selected && selection.len() > 1 {
-                                    format!("🗑 Delete ({} selected)", selection.len())
+                                    format!("{} Delete ({} selected)", ph::TRASH, selection.len())
                                 } else {
-                                    "🗑 Delete".to_owned()
+                                    format!("{} Delete", ph::TRASH)
                                 };
                                 if ui
                                     .add(
@@ -469,14 +472,14 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                                     ui.close_menu();
                                 }
                                 if entry.kind == EntryKind::File
-                                    && ui.button("✎  Rename").clicked()
+                                    && ui.button(format!("{}  Rename", ph::PENCIL)).clicked()
                                 {
                                     rename.set(Some(entry.path.clone()));
                                     ui.close_menu();
                                 }
                                 ui.separator();
                                 if ui
-                                    .button("⎘  Copy URL")
+                                    .button(format!("{}  Copy URL", ph::LINK))
                                     .on_hover_text("Copy the public URL to clipboard")
                                     .clicked()
                                 {
@@ -485,7 +488,7 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                                 }
                                 if entry.kind == EntryKind::File
                                     && ui
-                                        .button("🔑  Copy presigned URL (24 h)")
+                                        .button(format!("{}  Copy presigned URL (24 h)", ph::KEY))
                                         .on_hover_text(
                                             "Generate a presigned URL valid for 24 hours",
                                         )
@@ -528,7 +531,7 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                             ui.add_space(ROW_V_PAD);
                             let path_str = entry.path.to_string();
                             if ui
-                                .button(RichText::new("⎘").size(16.0))
+                                .button(RichText::new(ph::COPY).size(16.0))
                                 .on_hover_text(format!("Copy: {path_str}"))
                                 .clicked()
                             {

@@ -26,12 +26,12 @@ impl S3Backend {
     }
 }
 
-/// Standard environment variable names.
-pub const ENV_BUCKET: &str = "AWS_S3_BUCKET";
-pub const ENV_ENDPOINT: &str = "AWS_ENDPOINT_URL";
-pub const ENV_ACCESS_KEY: &str = "AWS_ACCESS_KEY_ID";
-pub const ENV_SECRET_KEY: &str = "AWS_SECRET_ACCESS_KEY";
-pub const ENV_REGION: &str = "AWS_DEFAULT_REGION";
+/// Environment variable names used by this application.
+pub const ENV_BUCKET: &str = "S3_BUCKET";
+pub const ENV_ENDPOINT: &str = "S3_ENDPOINT_URL";
+pub const ENV_ACCESS_KEY: &str = "S3_ACCESS_KEY_ID";
+pub const ENV_SECRET_KEY: &str = "S3_SECRET_ACCESS_KEY";
+pub const ENV_REGION: &str = "S3_REGION";
 
 /// Explicit credentials for constructing an [`S3Backend`].
 ///
@@ -48,24 +48,24 @@ pub struct S3Config<'a> {
 }
 
 impl S3Backend {
-    /// Build entirely from environment variables.
-    /// Reads `AWS_S3_BUCKET` for the bucket name plus the standard AWS credential vars.
-    /// Returns `Err` if `AWS_S3_BUCKET` is unset or the client cannot be built.
+    /// Build from the application's `S3_*` environment variables.
+    /// Returns `Err` if `S3_BUCKET`, `S3_ACCESS_KEY_ID`, or `S3_SECRET_ACCESS_KEY` are unset.
     pub fn from_env() -> Result<Self> {
         let bucket =
             std::env::var(ENV_BUCKET).with_context(|| format!("{ENV_BUCKET} is not set"))?;
+        let access_key = std::env::var(ENV_ACCESS_KEY)
+            .with_context(|| format!("{ENV_ACCESS_KEY} is not set"))?;
+        let secret_key = std::env::var(ENV_SECRET_KEY)
+            .with_context(|| format!("{ENV_SECRET_KEY} is not set"))?;
         let endpoint = std::env::var(ENV_ENDPOINT).ok().filter(|s| !s.is_empty());
         let region = std::env::var(ENV_REGION).unwrap_or_else(|_| "us-east-1".to_owned());
-        let store = AmazonS3Builder::from_env()
-            .with_bucket_name(&bucket)
-            .build()
-            .with_context(|| format!("building S3 client for bucket '{bucket}'"))?;
-        Ok(Self {
-            store,
-            bucket: bucket.clone(),
-            endpoint,
-            region,
-            display_name: format!("S3: {bucket}"),
+
+        Self::with_credentials(S3Config {
+            bucket: &bucket,
+            endpoint: endpoint.as_deref(),
+            access_key: &access_key,
+            secret_key: &secret_key,
+            region: &region,
         })
     }
 

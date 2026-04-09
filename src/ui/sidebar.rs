@@ -5,15 +5,14 @@ use crate::storage::StoragePath;
 #[derive(Default)]
 pub struct SidebarResponse {
     pub navigate_to: Option<StoragePath>,
-    /// User clicked the bucket name — caller should open the credential form.
-    pub open_config: bool,
+    pub close_bucket: bool,
 }
 
 const INDENT: f32 = 14.0;
 
-pub fn show(ui: &mut Ui, current_path: &StoragePath) -> SidebarResponse {
+pub fn show(ui: &mut Ui, current_path: &StoragePath, connected: bool) -> SidebarResponse {
     let mut navigate_to = None;
-    let mut open_config = false;
+    let mut close_bucket = false;
 
     ui.heading("Location");
     ui.separator();
@@ -28,45 +27,48 @@ pub fn show(ui: &mut Ui, current_path: &StoragePath) -> SidebarResponse {
             let glyph = if is_last { "└ " } else { "├ " };
             ui.label(RichText::new(glyph).color(Color32::GRAY).monospace());
 
-            if depth == 0 {
-                // Bucket name: always clickable — opens the credential/config form.
-                let style = if is_last {
-                    // At root: bold + link colour so it's clearly interactive.
-                    egui::RichText::new(&label)
-                        .strong()
-                        .color(ui.visuals().hyperlink_color)
-                } else {
-                    egui::RichText::new(&label).color(ui.visuals().hyperlink_color)
-                };
-                if ui
-                    .add(egui::Label::new(style).truncate().sense(egui::Sense::click()))
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text("Click to edit connection / credentials")
-                    .clicked()
-                {
-                    open_config = true;
-                }
-            } else if is_last {
-                // Current folder: plain bold text, not interactive.
+            if is_last {
+                // Current location: plain bold text, not interactive.
                 ui.add(egui::Label::new(RichText::new(&label).strong()).truncate());
-            } else {
-                // Ancestor folder: clickable, navigates to that path.
-                if ui
-                    .add(
-                        egui::Label::new(
-                            egui::RichText::new(&label).color(ui.visuals().hyperlink_color),
-                        )
-                        .truncate()
-                        .sense(egui::Sense::click()),
+            } else if ui
+                .add(
+                    egui::Label::new(
+                        egui::RichText::new(&label).color(ui.visuals().hyperlink_color),
                     )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .clicked()
-                {
-                    navigate_to = Some(path);
-                }
+                    .truncate()
+                    .sense(egui::Sense::click()),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                navigate_to = Some(path);
             }
         });
     }
 
-    SidebarResponse { navigate_to, open_config }
+    // ── Close bucket button — pinned to the bottom of the panel ─────────────
+    if connected {
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+            ui.add_space(6.0);
+            if ui
+                .add(
+                    egui::Button::new(
+                        RichText::new(
+                            format!("{}  Close bucket", egui_phosphor::regular::X)
+                        )
+                            .color(Color32::from_rgb(180, 40, 40))
+                            .strong(),
+                    )
+                    .min_size(egui::vec2(ui.available_width(), 0.0)),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                close_bucket = true;
+            }
+            ui.separator();
+        });
+    }
+
+    SidebarResponse { navigate_to, close_bucket }
 }

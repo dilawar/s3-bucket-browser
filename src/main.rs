@@ -46,19 +46,61 @@ fn main() -> Result<()> {
 }
 
 /// Determine the startup mode:
-/// 1. All required env vars set → open browser directly.
-/// 2. CLI arg is a local path → open browser with LocalBackend.
-/// 3. Otherwise → show the credentials config form.
+///
+/// 1. `.env` found → load it and connect directly (no login screen, no stored creds).
+///    If the file exists but variables are incomplete, show the config form with an
+///    error banner explaining what is missing — still no silent fall-through to login.
+/// 2. Required `S3_*` vars already in the environment → connect directly.
+/// 3. CLI arg is a local path → open the local browser.
+/// 4. Otherwise → show the credentials config form.
+///
+/// Variables recognised (in `.env` or the shell environment):
+///   S3_BUCKET            – bucket name (required)
+///   S3_ACCESS_KEY_ID     – access key ID (required)
+///   S3_SECRET_ACCESS_KEY – secret access key (required)
+///   S3_ENDPOINT_URL      – custom endpoint, e.g. https://s3.us-west-004.backblazeb2.com
+///   S3_REGION            – region, e.g. us-east-1  (default: us-east-1)
 fn resolve_startup(rt: tokio::runtime::Handle) -> S3Explorer {
     use s3_explorer::storage::LocalBackend;
 
-    // Priority 1: full S3 config from env vars.
-    if let Ok(backend) = S3Backend::from_env() {
-        let start = StoragePath::s3_root(backend.bucket_name());
-        return S3Explorer::new(Arc::new(backend), start, rt);
+    // ── Step 1: load .env if present ─────────────────────────────────────────
+    // dotenvy does NOT override variables already set in the shell environment.
+    let dotenv_loaded = match dotenvy::dotenv() {
+        Ok(path) => {
+            tracing::info!("Loaded .env from {path:?}");
+            true
+        }
+        Err(dotenvy::Error::Io(_)) => false, // no .env file — that's fine
+        Err(e) => {
+            tracing::warn!(".env parse error: {e}");
+            false
+        }
+    };
+
+    // ── Step 2: connect from env vars (set directly or loaded from .env) ─────
+    match S3Backend::from_env() {
+        Ok(backend) => {
+            let start = StoragePath::s3_root(backend.bucket_name());
+            tracing::info!("Auto-connecting to '{}'", backend.bucket_name());
+            return S3Explorer::new(Arc::new(backend), start, rt);
+        }
+        Err(e) if dotenv_loaded => {
+            // .env was found but it doesn't supply all required variables.
+            // Show the config form pre-filled with whatever was loaded, and
+            // explain the problem — do NOT silently fall through to an empty form.
+            tracing::warn!("Could not connect using .env: {e}");
+            return S3Explorer::needs_config_with_error(
+                rt,
+                Some(format!(
+                    ".env loaded but connection failed: {e}. \
+                     Make sure S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are set."
+                )),
+            );
+        }
+        Err(_) => {} // no .env and no env vars — continue below
     }
 
-    // Priority 2: explicit local path as CLI argument.
+    // ── Step 3: explicit local path as CLI argument ───────────────────────────
     if let Some(arg) = std::env::args().nth(1) {
         let path = StoragePath::parse(&arg);
         if let StoragePath::Local(ref pb) = path
@@ -68,6 +110,6 @@ fn resolve_startup(rt: tokio::runtime::Handle) -> S3Explorer {
         }
     }
 
-    // Priority 3: show config form (pre-filled from env/saved creds).
+    // ── Step 4: show the credentials config form ──────────────────────────────
     S3Explorer::needs_config(rt)
 }
