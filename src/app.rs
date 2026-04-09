@@ -690,6 +690,12 @@ impl S3Explorer {
                 if let Some(path) = resp.navigate_to {
                     self.navigate_to(path, ctx);
                 }
+                if resp.open_config {
+                    self.mode = Mode::Configure {
+                        fields: config::ConfigFields::load(),
+                        error: None,
+                    };
+                }
             });
 
         CentralPanel::default().show(ctx, |ui| {
