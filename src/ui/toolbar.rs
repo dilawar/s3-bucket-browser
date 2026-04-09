@@ -38,21 +38,22 @@ pub fn show(ui: &mut Ui, state: ToolbarState<'_>) -> ToolbarResponse {
     } = state;
     let mut resp = ToolbarResponse::default();
 
+    use egui_phosphor::regular as ph;
     ui.horizontal(|ui| {
         resp.go_back = ui
-            .add_enabled(can_back, Button::new(RichText::new("◀").size(16.0)))
+            .add_enabled(can_back, Button::new(RichText::new(ph::ARROW_LEFT).size(16.0)))
             .on_hover_text("Go back")
             .clicked();
         resp.go_forward = ui
-            .add_enabled(can_forward, Button::new(RichText::new("▶").size(16.0)))
+            .add_enabled(can_forward, Button::new(RichText::new(ph::ARROW_RIGHT).size(16.0)))
             .on_hover_text("Go forward")
             .clicked();
         resp.go_up = ui
-            .add_enabled(can_up, Button::new(RichText::new("⬆").size(16.0)))
+            .add_enabled(can_up, Button::new(RichText::new(ph::ARROW_UP).size(16.0)))
             .on_hover_text("Go to parent directory")
             .clicked();
         resp.refresh = ui
-            .button(RichText::new("⟳").size(18.0))
+            .button(RichText::new(ph::ARROWS_CLOCKWISE).size(18.0))
             .on_hover_text("Refresh")
             .clicked();
 
@@ -61,7 +62,7 @@ pub fn show(ui: &mut Ui, state: ToolbarState<'_>) -> ToolbarResponse {
         // Theme button on the far right — add it first in a right_to_left sub-layout
         // so the middle section can take the remaining space.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let icon = if dark_mode { "☀" } else { "☽" };
+            let icon = if dark_mode { ph::SUN } else { ph::MOON };
             let tooltip = if dark_mode { "Switch to light theme" } else { "Switch to dark theme" };
             if ui
                 .button(RichText::new(icon).size(18.0))
@@ -113,7 +114,7 @@ pub fn show(ui: &mut Ui, state: ToolbarState<'_>) -> ToolbarResponse {
                     }
                     // Edit button
                     if ui
-                        .add(Label::new(RichText::new("✎").color(muted)).sense(Sense::click()))
+                        .add(Label::new(RichText::new(ph::PENCIL).color(muted)).sense(Sense::click()))
                         .on_hover_text("Edit path manually")
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()

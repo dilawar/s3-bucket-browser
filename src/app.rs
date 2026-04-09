@@ -66,6 +66,8 @@ pub struct S3Explorer {
     presign: Option<TransferHandle>,
     /// Pending ZIP download that is awaiting user confirmation (large archive).
     zip_confirm: Option<ZipConfirm>,
+    /// Whether the "close bucket" confirmation modal is open.
+    confirming_close: bool,
     rt: tokio::runtime::Handle,
 }
 
@@ -103,16 +105,23 @@ impl S3Explorer {
             rename_state: None,
             presign: None,
             zip_confirm: None,
+            confirming_close: false,
             rt,
         }
     }
 
     /// Start in configure mode; fields are pre-filled from env vars and saved credentials.
     pub fn needs_config(rt: tokio::runtime::Handle) -> Self {
+        Self::needs_config_with_error(rt, None)
+    }
+
+    /// Like [`needs_config`] but pre-sets an error banner on the form.
+    /// Used when a `.env` was loaded but the connection could not be built.
+    pub fn needs_config_with_error(rt: tokio::runtime::Handle, error: Option<String>) -> Self {
         Self {
             mode: Mode::Configure {
                 fields: config::ConfigFields::load(),
-                error: None,
+                error,
             },
             backend: None,
             current_path: StoragePath::default(),
@@ -135,6 +144,7 @@ impl S3Explorer {
             rename_state: None,
             presign: None,
             zip_confirm: None,
+            confirming_close: false,
             rt,
         }
     }
@@ -430,6 +440,51 @@ impl S3Explorer {
         });
     }
 
+    fn show_close_bucket_modal(&mut self, ctx: &egui::Context) {
+        if !self.confirming_close { return; }
+
+        let mut remove_creds = false;
+        let mut keep_creds   = false;
+        let mut cancelled    = false;
+
+        egui::Modal::new(egui::Id::new("close_bucket")).show(ctx, |ui| {
+            ui.set_max_width(340.0);
+            ui.heading("Close bucket");
+            ui.add_space(8.0);
+            ui.label("Also remove the stored credentials for this bucket?");
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui.button(egui::RichText::new("Remove & close").strong()).clicked() {
+                    remove_creds = true;
+                }
+                if ui.button("Keep & close").clicked() {
+                    keep_creds = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancelled = true;
+                }
+            });
+        });
+
+        if remove_creds || keep_creds {
+            if remove_creds {
+                if let Err(e) = crate::credentials::CredentialStore::open()
+                    .and_then(|s| s.delete())
+                {
+                    tracing::warn!("Failed to delete stored credentials: {e}");
+                }
+            }
+            self.confirming_close = false;
+            self.backend = None;
+            self.mode = Mode::Configure {
+                fields: config::ConfigFields::load(),
+                error: None,
+            };
+        } else if cancelled {
+            self.confirming_close = false;
+        }
+    }
+
     fn show_zip_confirm_modal(&mut self, ctx: &egui::Context) {
         if self.zip_confirm.is_none() { return }
         let mut confirmed = false;
@@ -547,6 +602,7 @@ impl S3Explorer {
         self.poll_transfer(ctx);
 
         // Modals (shown over everything else)
+        self.show_close_bucket_modal(ctx);
         self.show_zip_confirm_modal(ctx);
         self.show_new_folder_modal(ctx);
         self.show_rename_modal(ctx);
@@ -667,7 +723,7 @@ impl S3Explorer {
                         }
                         TransferStatus::Error(msg) => {
                             ui.separator();
-                            ui.label(RichText::new(format!("✗ {msg}")).size(13.0).color(Color32::from_rgb(180, 30, 30)));
+                            ui.label(RichText::new(format!("{} {msg}", egui_phosphor::regular::X_CIRCLE)).size(13.0).color(Color32::from_rgb(180, 30, 30)));
                         }
                     }
                 }
@@ -686,15 +742,12 @@ impl S3Explorer {
             .default_width(220.0)
             .width_range(80.0..=max_sidebar)
             .show(ctx, |ui| {
-                let resp = sidebar::show(ui, &self.current_path);
+                let resp = sidebar::show(ui, &self.current_path, true);
                 if let Some(path) = resp.navigate_to {
                     self.navigate_to(path, ctx);
                 }
-                if resp.open_config {
-                    self.mode = Mode::Configure {
-                        fields: config::ConfigFields::load(),
-                        error: None,
-                    };
+                if resp.close_bucket {
+                    self.confirming_close = true;
                 }
             });
 

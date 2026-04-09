@@ -304,7 +304,7 @@ pub fn show(ui: &mut Ui, f: &mut ConfigFields, error: Option<&str>) -> ConfigRes
 
         if let Some(msg) = error {
             ui.label(
-                RichText::new(format!("✗  {msg}"))
+                RichText::new(format!("{}  {msg}", egui_phosphor::regular::X_CIRCLE))
                     .color(Color32::from_rgb(180, 30, 30))
                     .size(13.0),
             );

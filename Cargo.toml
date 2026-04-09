@@ -36,6 +36,8 @@ rand = "0.8"
 directories = "5"
 toml = "0.8"
 urlencoding = "2"
+egui-phosphor = { version = "0.9", default-features = false, features = ["regular"] }
+dotenvy = "0.15"
 mime_guess = "2"
 bytes = "1"
 rfd = "0.15"
