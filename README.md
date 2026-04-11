@@ -5,13 +5,12 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange?style=flat-square)](https://www.rust-lang.org)
 
-A lightweight native GUI for browsing and managing **S3-compatible buckets** — AWS S3, Backblaze B2, MinIO, and any provider that speaks the S3 API.
+A lightweight native GUI for browsing and managing **S3-compatible buckets** —
+AWS S3, Backblaze B2, MinIO, and any provider that speaks the S3 API.
 
-![](./images/Screenshot From 2026-04-11 12-12-41.png)
+![Screenshot]("./images/Screenshot From 2026-04-11 12-12-41.png")
 
 Built with Rust and [egui](https://github.com/emilk/egui).
-
----
 
 ## Features
 
@@ -69,7 +68,3 @@ s3://my-bucket/
 s3://my-bucket/?endpoint=https://s3.us-west-004.backblazeb2.com&region=us-west-004
 https://s3.us-west-004.backblazeb2.com/my-bucket
 ```
-
-## License
-
-[MIT](LICENSE)
