@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=S3 Explorer
+GenericName=S3 Bucket Browser
+Comment=Browse and manage S3-compatible object storage (AWS S3, Backblaze B2, MinIO)
+Exec=s3-explorer
+Icon=s3-explorer
+Terminal=false
+StartupNotify=true
+StartupWMClass=s3-explorer
+Categories=Network;FileManager;
+Keywords=S3;AWS;Backblaze;MinIO;cloud;storage;bucket;
