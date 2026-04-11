@@ -51,23 +51,23 @@ fn resolve_startup() -> S3Explorer {
     if let Some(saved) = crate::credentials::CredentialStore::open()
         .ok()
         .and_then(|s| s.load())
+        && !saved.bucket.is_empty()
+        && !saved.access_key.is_empty()
     {
-        if !saved.bucket.is_empty() && !saved.access_key.is_empty() {
-            let endpoint = if saved.endpoint.is_empty() {
-                None
-            } else {
-                Some(saved.endpoint.as_str())
-            };
-            if let Ok(backend) = S3Backend::with_credentials(S3Config {
-                bucket: &saved.bucket,
-                endpoint,
-                access_key: &saved.access_key,
-                secret_key: &saved.secret_key,
-                region: &saved.region,
-            }) {
-                let start = StoragePath::s3_root(backend.bucket_name());
-                return S3Explorer::new(Arc::new(backend), start);
-            }
+        let endpoint = if saved.endpoint.is_empty() {
+            None
+        } else {
+            Some(saved.endpoint.as_str())
+        };
+        if let Ok(backend) = S3Backend::with_credentials(S3Config {
+            bucket: &saved.bucket,
+            endpoint,
+            access_key: &saved.access_key,
+            secret_key: &saved.secret_key,
+            region: &saved.region,
+        }) {
+            let start = StoragePath::s3_root(backend.bucket_name());
+            return S3Explorer::new(Arc::new(backend), start);
         }
     }
     S3Explorer::needs_config()

@@ -325,11 +325,12 @@ mod wasm_helpers {
         mac.finalize().into_bytes().to_vec()
     }
 
+    /// `(key, size_bytes, last_modified_rfc3339)`
+    type S3Object = (String, u64, String);
+
     /// Parse the ListObjectsV2 XML response.
-    /// Returns (common_prefixes, objects: Vec<(key, size, last_modified_str)>)
-    pub fn parse_list_objects(
-        xml: &str,
-    ) -> Result<(Vec<String>, Vec<(String, u64, String)>)> {
+    /// Returns (common_prefixes, objects)
+    pub fn parse_list_objects(xml: &str) -> Result<(Vec<String>, Vec<S3Object>)> {
         use quick_xml::Reader;
         use quick_xml::events::Event;
 
