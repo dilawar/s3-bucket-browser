@@ -1,6 +1,6 @@
 [package]
 name = "s3-explorer"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
 description = "A native GUI for browsing S3-compatible buckets (AWS S3, Backblaze B2, MinIO, …)"
 license = "MIT"
