@@ -1,7 +1,8 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 use std::path::Path;
 
 use anyhow::{Result, bail};
-use async_trait::async_trait;
 use bytes::Bytes;
 use tracing::{debug, warn};
 
@@ -10,7 +11,7 @@ use super::path::{EntryKind, StorageEntry, StoragePath, sort_entries};
 
 pub struct LocalBackend;
 
-#[async_trait]
+#[async_trait::async_trait]
 impl Backend for LocalBackend {
     async fn list(&self, path: &StoragePath) -> Result<Vec<StorageEntry>> {
         let StoragePath::Local(dir) = path else {

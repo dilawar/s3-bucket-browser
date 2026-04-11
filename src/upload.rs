@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -9,9 +8,7 @@ use crate::storage::StoragePath;
 // ── Single-file upload ────────────────────────────────────────────────────────
 
 pub fn spawn_upload(sc: SpawnContext, dest: StoragePath) -> TransferHandle {
-    spawn_transfer_uploading(sc, move |backend, progress| {
-        do_upload(backend, dest, progress)
-    })
+    spawn_transfer_uploading(sc, move |backend, progress| do_upload(backend, dest, progress))
 }
 
 async fn do_upload(
@@ -19,49 +16,55 @@ async fn do_upload(
     current_path: StoragePath,
     progress: Arc<Mutex<String>>,
 ) -> Result<String> {
-    let local_path =
-        tokio::task::spawn_blocking(|| rfd::FileDialog::new().pick_file()).await?;
-    let Some(local_path) = local_path else {
+    let handle = rfd::AsyncFileDialog::new().pick_file().await;
+    let Some(handle) = handle else {
         return Ok("Upload cancelled.".to_owned());
     };
-    let file_name = local_path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "upload".to_owned());
+    let file_name = handle.file_name();
     *progress.lock().unwrap() = file_name.clone();
     let dest = current_path.child_file(&file_name);
-    let data = bytes::Bytes::from(tokio::fs::read(&local_path).await?);
+    // AsyncFileHandle::read() works on both native (reads from disk) and WASM
+    // (reads the in-memory File object — no tokio::fs needed).
+    let data = bytes::Bytes::from(handle.read().await);
     let size = data.len();
     backend.put(&dest, data).await?;
     Ok(format!("Uploaded {file_name} ({size} bytes) → {dest}"))
 }
 
-// ── Folder upload ─────────────────────────────────────────────────────────────
+// ── Folder upload (native only) ───────────────────────────────────────────────
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn spawn_upload_folder(sc: SpawnContext, dest: StoragePath) -> TransferHandle {
     spawn_transfer_uploading(sc, move |backend, progress| {
         do_upload_folder(backend, dest, progress)
     })
 }
 
+/// WASM stub — folder upload is not supported in the browser.
+#[cfg(target_arch = "wasm32")]
+pub fn spawn_upload_folder(_sc: SpawnContext, _dest: StoragePath) -> TransferHandle {
+    use crate::async_rt::spawn_transfer;
+    spawn_transfer(_sc, |_backend| async {
+        Err(anyhow::anyhow!("Folder upload is not supported in the browser"))
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 async fn do_upload_folder(
     backend: Arc<dyn crate::storage::Backend>,
     current_path: StoragePath,
     progress: Arc<Mutex<String>>,
 ) -> Result<String> {
-    // Pick folder on the blocking thread (rfd is sync).
-    let local_folder =
-        tokio::task::spawn_blocking(|| rfd::FileDialog::new().pick_folder()).await?;
-    let Some(local_folder) = local_folder else {
+    let handle = rfd::AsyncFileDialog::new().pick_folder().await;
+    let Some(folder_handle) = handle else {
         return Ok("Upload cancelled.".to_owned());
     };
+    let local_folder = folder_handle.path().to_path_buf();
 
-    // Walk all files under the folder (sync, on blocking thread).
     let folder = local_folder.clone();
     let file_list: Vec<(std::path::PathBuf, String)> =
         tokio::task::spawn_blocking(move || {
             let mut out = Vec::new();
-            // Strip the folder's *parent* so the folder name is preserved in the key.
             let strip_base = folder.parent().unwrap_or(folder.as_path()).to_path_buf();
             collect_files_sync(&folder, &strip_base, &mut out)?;
             Ok::<_, anyhow::Error>(out)
@@ -104,11 +107,10 @@ async fn do_upload_folder(
     }
 }
 
-/// Recursively collect all files under `dir` into `out` as
-/// `(absolute_path, s3_key_relative_to_strip_base)`.
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_files_sync(
-    dir: &Path,
-    strip_base: &Path,
+    dir: &std::path::Path,
+    strip_base: &std::path::Path,
     out: &mut Vec<(std::path::PathBuf, String)>,
 ) -> Result<()> {
     for entry in std::fs::read_dir(dir)? {
@@ -122,7 +124,7 @@ fn collect_files_sync(
                 .strip_prefix(strip_base)
                 .unwrap_or(&path)
                 .to_string_lossy()
-                .replace('\\', "/"); // normalise Windows paths
+                .replace('\\', "/");
             out.push((path, rel));
         }
     }

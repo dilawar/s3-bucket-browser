@@ -8,21 +8,65 @@ use crate::storage::{Backend, StorageEntry, StoragePath};
 // ── SpawnContext ──────────────────────────────────────────────────────────────
 
 /// Common context shared by every task-spawning operation.
-///
-/// Bundles the three parameters that every spawn call needs — backend, egui
-/// repaint handle, and tokio runtime — so call sites don't repeat them.
 #[derive(Clone)]
 pub struct SpawnContext {
     pub backend: Arc<dyn Backend>,
     pub ctx: egui::Context,
+    #[cfg(not(target_arch = "wasm32"))]
     pub rt: tokio::runtime::Handle,
+}
+
+// ── TaskHandle ────────────────────────────────────────────────────────────────
+
+/// Platform-agnostic wrapper around a spawned async task.
+enum TaskHandle {
+    #[cfg(not(target_arch = "wasm32"))]
+    Tokio(tokio::task::JoinHandle<()>),
+    /// On WASM, `spawn_local` returns `()` — no handle, no cancellation.
+    #[cfg(target_arch = "wasm32")]
+    Wasm,
+}
+
+impl TaskHandle {
+    fn is_finished(&self) -> bool {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Tokio(h) => h.is_finished(),
+            #[cfg(target_arch = "wasm32")]
+            Self::Wasm => false,
+        }
+    }
+
+    fn abort(&self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let Self::Tokio(h) = self;
+            h.abort();
+        }
+    }
+}
+
+// ── platform_spawn ────────────────────────────────────────────────────────────
+
+#[cfg(not(target_arch = "wasm32"))]
+fn platform_spawn(
+    rt: &tokio::runtime::Handle,
+    fut: impl std::future::Future<Output = ()> + Send + 'static,
+) -> TaskHandle {
+    TaskHandle::Tokio(rt.spawn(fut))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn platform_spawn(fut: impl std::future::Future<Output = ()> + 'static) -> TaskHandle {
+    wasm_bindgen_futures::spawn_local(fut);
+    TaskHandle::Wasm
 }
 
 // ── ListingHandle ─────────────────────────────────────────────────────────────
 
 pub struct ListingHandle {
     slot: Arc<Mutex<Option<Result<Vec<StorageEntry>>>>>,
-    join: tokio::task::JoinHandle<()>,
+    join: TaskHandle,
 }
 
 impl ListingHandle {
@@ -42,11 +86,21 @@ impl ListingHandle {
 pub fn spawn_listing(sc: SpawnContext, path: StoragePath) -> ListingHandle {
     let slot: Arc<Mutex<Option<Result<Vec<StorageEntry>>>>> = Arc::new(Mutex::new(None));
     let slot2 = Arc::clone(&slot);
-    let join = sc.rt.spawn(async move {
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let join = platform_spawn(&sc.rt, async move {
         let result = sc.backend.list(&path).await;
         *slot2.lock().unwrap() = Some(result);
         sc.ctx.request_repaint();
     });
+
+    #[cfg(target_arch = "wasm32")]
+    let join = platform_spawn(async move {
+        let result = sc.backend.list(&path).await;
+        *slot2.lock().unwrap() = Some(result);
+        sc.ctx.request_repaint();
+    });
+
     ListingHandle { slot, join }
 }
 
@@ -56,7 +110,7 @@ pub struct TransferHandle {
     slot: Arc<Mutex<Option<Result<String>>>>,
     /// Current file/operation being processed; empty when not applicable.
     progress: Arc<Mutex<String>>,
-    join: tokio::task::JoinHandle<()>,
+    join: TaskHandle,
 }
 
 impl TransferHandle {
@@ -101,7 +155,7 @@ impl TransferHandle {
         }
     }
 
-    /// Abort the underlying task immediately.
+    /// Abort the underlying task immediately (no-op on WASM).
     pub fn cancel(&self) {
         self.join.abort();
     }
@@ -109,8 +163,6 @@ impl TransferHandle {
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 
-/// Spawn a delete task that removes every path in `paths` sequentially.
-/// Directories (S3 prefixes ending with `/`) are deleted recursively.
 pub fn spawn_delete(sc: SpawnContext, paths: Vec<StoragePath>) -> TransferHandle {
     spawn_transfer(sc, move |backend| do_delete(backend, paths))
 }
@@ -125,7 +177,6 @@ async fn do_delete(backend: Arc<dyn Backend>, paths: Vec<StoragePath>) -> Result
 
 // ── Presign ───────────────────────────────────────────────────────────────────
 
-/// Spawn a task that generates a pre-signed GET URL valid for 24 hours.
 pub fn spawn_presign(sc: SpawnContext, path: StoragePath) -> TransferHandle {
     spawn_transfer(sc, move |backend| async move {
         backend.presign_url(&path, Duration::from_secs(86400)).await
@@ -134,10 +185,7 @@ pub fn spawn_presign(sc: SpawnContext, path: StoragePath) -> TransferHandle {
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
-/// Spawn a transfer task with no progress reporting (delete, download, presign).
-///
-/// The factory `f` receives the backend Arc and returns a future that produces
-/// a status string.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn spawn_transfer<F, Fut>(sc: SpawnContext, f: F) -> TransferHandle
 where
     F: FnOnce(Arc<dyn Backend>) -> Fut + Send + 'static,
@@ -146,7 +194,7 @@ where
     let slot: Arc<Mutex<Option<Result<String>>>> = Arc::new(Mutex::new(None));
     let slot2 = Arc::clone(&slot);
     let progress = Arc::new(Mutex::new(String::new()));
-    let join = sc.rt.spawn(async move {
+    let join = platform_spawn(&sc.rt, async move {
         let result = f(sc.backend).await;
         *slot2.lock().unwrap() = Some(result);
         sc.ctx.request_repaint();
@@ -154,10 +202,24 @@ where
     TransferHandle { slot, progress, join }
 }
 
-/// Spawn a transfer task that receives a progress Arc to report current filename.
-///
-/// The factory `f` receives both the backend Arc and a progress slot it can
-/// write to on each file processed.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn spawn_transfer<F, Fut>(sc: SpawnContext, f: F) -> TransferHandle
+where
+    F: FnOnce(Arc<dyn Backend>) -> Fut + 'static,
+    Fut: std::future::Future<Output = Result<String>> + 'static,
+{
+    let slot: Arc<Mutex<Option<Result<String>>>> = Arc::new(Mutex::new(None));
+    let slot2 = Arc::clone(&slot);
+    let progress = Arc::new(Mutex::new(String::new()));
+    let join = platform_spawn(async move {
+        let result = f(sc.backend).await;
+        *slot2.lock().unwrap() = Some(result);
+        sc.ctx.request_repaint();
+    });
+    TransferHandle { slot, progress, join }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn spawn_transfer_uploading<F, Fut>(sc: SpawnContext, f: F) -> TransferHandle
 where
     F: FnOnce(Arc<dyn Backend>, Arc<Mutex<String>>) -> Fut + Send + 'static,
@@ -167,7 +229,25 @@ where
     let slot2 = Arc::clone(&slot);
     let progress: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
     let progress2 = Arc::clone(&progress);
-    let join = sc.rt.spawn(async move {
+    let join = platform_spawn(&sc.rt, async move {
+        let result = f(sc.backend, progress2).await;
+        *slot2.lock().unwrap() = Some(result);
+        sc.ctx.request_repaint();
+    });
+    TransferHandle { slot, progress, join }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn spawn_transfer_uploading<F, Fut>(sc: SpawnContext, f: F) -> TransferHandle
+where
+    F: FnOnce(Arc<dyn Backend>, Arc<Mutex<String>>) -> Fut + 'static,
+    Fut: std::future::Future<Output = Result<String>> + 'static,
+{
+    let slot: Arc<Mutex<Option<Result<String>>>> = Arc::new(Mutex::new(None));
+    let slot2 = Arc::clone(&slot);
+    let progress: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let progress2 = Arc::clone(&progress);
+    let join = platform_spawn(async move {
         let result = f(sc.backend, progress2).await;
         *slot2.lock().unwrap() = Some(result);
         sc.ctx.request_repaint();

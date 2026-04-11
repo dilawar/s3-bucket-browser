@@ -62,6 +62,17 @@ decrypt:
     gpg --batch --yes --passphrase-fd 0 --decrypt \
         --output .env .env.gpg <<< "$GPG_PASSPHRASE_GITHUB"
 
+# ── WASM ──────────────────────────────────────────────────────────────────────
+
+# Build WASM package
+build-wasm:
+    wasm-pack build --target web --out-dir pkg
+
+# Build WASM package and serve locally (requires Python 3)
+serve-wasm: build-wasm
+    @echo "Open http://localhost:8080 in your browser"
+    python3 -m http.server 8080
+
 # ── Packaging ─────────────────────────────────────────────────────────────────
 
 # Generate icons from SVG source (requires ImageMagick)

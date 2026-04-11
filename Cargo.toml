@@ -13,39 +13,69 @@ path = "src/main.rs"
 [lib]
 name = "s3_explorer"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
+# ── Always (native + WASM) ────────────────────────────────────────────────────
 [dependencies]
 eframe = { version = "0.31", features = ["glow"] }
 egui = "0.31"
 egui_extras = { version = "0.31", features = ["all_loaders"] }
+egui-phosphor = { version = "0.9", default-features = false, features = ["regular"] }
 
 anyhow = "1"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-strum = { version = "0.27", features = ["derive"] }
 async-trait = "0.1"
-chrono = { version = "0.4", default-features = false, features = [
-    "std",
-    "clock",
-] }
+strum = { version = "0.27", features = ["derive"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "wasmbind"] }
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
-object_store = { version = "0.11", features = ["aws"] }
+hmac = "0.12"
+sha2 = "0.10"
+quick-xml = "0.37"
 aes-gcm = "0.10"
 rand = "0.8"
-directories = "5"
 toml = "0.8"
 urlencoding = "2"
-egui-phosphor = { version = "0.9", default-features = false, features = [
-    "regular",
-] }
-dotenvy = "0.15"
 mime_guess = "2"
 bytes = "1"
 rfd = "0.15"
 futures = "0.3"
 http = "1"
-zip = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+# ── Native-only ───────────────────────────────────────────────────────────────
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["full"] }
+directories = "5"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+object_store = { version = "0.11", features = ["aws"] }
+
+# ── WASM-only ─────────────────────────────────────────────────────────────────
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# tokio with minimal features needed by object_store internals
+tokio = { version = "1", default-features = false, features = ["rt", "sync"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Document",
+    "Storage",
+    "Blob",
+    "BlobPropertyBag",
+    "Url",
+    "HtmlAnchorElement",
+    "HtmlCanvasElement",
+    "CssStyleDeclaration",
+    "console",
+] }
+# Required so rand/aes-gcm can get entropy from the browser
+getrandom = { version = "0.2", features = ["js"] }
+console_error_panic_hook = "0.1"
+tracing-wasm = "0.2"
+hex = "0.4"
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
 
 [profile.release]
 opt-level = 2

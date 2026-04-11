@@ -144,3 +144,30 @@ jobs:
           name: s3-explorer-rpm
           path: target/generate-rpm/*.rpm
           if-no-files-found: error
+
+  # WASM/browser build check
+  wasm:
+    name: WASM Build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm32
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM package
+        run: wasm-pack build --target web --out-dir pkg
+
+      - name: Clippy (WASM lib)
+        run: cargo clippy --target wasm32-unknown-unknown --lib -- -D warnings

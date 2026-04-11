@@ -1,12 +1,12 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use bytes::Bytes;
 
 use super::path::{StorageEntry, StoragePath};
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 pub trait Backend: Send + Sync + 'static {
     /// List the immediate children of `path`.
     async fn list(&self, path: &StoragePath) -> Result<Vec<StorageEntry>>;

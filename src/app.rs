@@ -68,6 +68,7 @@ pub struct S3Explorer {
     zip_confirm: Option<ZipConfirm>,
     /// Whether the "close bucket" confirmation modal is open.
     confirming_close: bool,
+    #[cfg(not(target_arch = "wasm32"))]
     rt: tokio::runtime::Handle,
 }
 
@@ -79,7 +80,11 @@ struct ZipConfirm {
 
 impl S3Explorer {
     /// Start immediately in browse mode (credentials already resolved).
-    pub fn new(backend: Arc<dyn Backend>, start: StoragePath, rt: tokio::runtime::Handle) -> Self {
+    pub fn new(
+        backend: Arc<dyn Backend>,
+        start: StoragePath,
+        #[cfg(not(target_arch = "wasm32"))] rt: tokio::runtime::Handle,
+    ) -> Self {
         info!("Opening {:?} with backend '{}'", start, backend.name());
         let path_input = start.to_string();
         Self {
@@ -106,18 +111,27 @@ impl S3Explorer {
             presign: None,
             zip_confirm: None,
             confirming_close: false,
+            #[cfg(not(target_arch = "wasm32"))]
             rt,
         }
     }
 
     /// Start in configure mode; fields are pre-filled from env vars and saved credentials.
-    pub fn needs_config(rt: tokio::runtime::Handle) -> Self {
-        Self::needs_config_with_error(rt, None)
+    pub fn needs_config(
+        #[cfg(not(target_arch = "wasm32"))] rt: tokio::runtime::Handle,
+    ) -> Self {
+        Self::needs_config_with_error(
+            #[cfg(not(target_arch = "wasm32"))]
+            rt,
+            None,
+        )
     }
 
     /// Like [`needs_config`] but pre-sets an error banner on the form.
-    /// Used when a `.env` was loaded but the connection could not be built.
-    pub fn needs_config_with_error(rt: tokio::runtime::Handle, error: Option<String>) -> Self {
+    pub fn needs_config_with_error(
+        #[cfg(not(target_arch = "wasm32"))] rt: tokio::runtime::Handle,
+        error: Option<String>,
+    ) -> Self {
         Self {
             mode: Mode::Configure {
                 fields: config::ConfigFields::load(),
@@ -145,6 +159,7 @@ impl S3Explorer {
             presign: None,
             zip_confirm: None,
             confirming_close: false,
+            #[cfg(not(target_arch = "wasm32"))]
             rt,
         }
     }
@@ -237,6 +252,7 @@ impl S3Explorer {
         SpawnContext {
             backend: Arc::clone(self.backend.as_ref().expect("backend is set in Browse mode")),
             ctx: ctx.clone(),
+            #[cfg(not(target_arch = "wasm32"))]
             rt: self.rt.clone(),
         }
     }

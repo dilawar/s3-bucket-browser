@@ -291,7 +291,14 @@ pub fn show(ui: &mut Ui, state: FileListState<'_>) -> FileListResponse {
                 return;
             }
             if let Some(msg) = error {
-                ui.label(RichText::new(format!("{}  {msg}", ph::X_CIRCLE)).color(Color32::from_rgb(180, 30, 30)));
+                if msg.starts_with("CORS_ERROR:") {
+                    show_cors_help(ui);
+                } else {
+                    ui.label(
+                        RichText::new(format!("{}  {msg}", ph::X_CIRCLE))
+                            .color(Color32::from_rgb(180, 30, 30)),
+                    );
+                }
                 return;
             }
 
@@ -573,4 +580,81 @@ fn upload_item(ui: &mut Ui, transfer_busy: bool, upload: &Cell<bool>) {
         upload.set(true);
         ui.close_menu();
     }
+}
+
+fn show_cors_help(ui: &mut egui::Ui) {
+    let red = Color32::from_rgb(180, 30, 30);
+    let amber = Color32::from_rgb(180, 100, 0);
+    let mono = egui::FontId::monospace(12.0);
+
+    ui.add_space(12.0);
+    ui.vertical_centered(|ui| {
+        ui.set_max_width(640.0);
+        ui.label(
+            RichText::new(format!("{}  CORS policy blocks browser requests", ph::X_CIRCLE))
+                .color(red)
+                .size(15.0)
+                .strong(),
+        );
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new(
+                "The bucket's CORS policy must allow requests from this origin.\n\
+                 Add the rule below using your provider's console or CLI, then reload.",
+            )
+            .color(amber),
+        );
+        ui.add_space(12.0);
+
+        egui::Frame::new()
+            .fill(Color32::from_gray(240))
+            .corner_radius(6.0)
+            .inner_margin(egui::Margin::same(10))
+            .show(ui, |ui| {
+                ui.label(RichText::new("AWS S3 — CLI").strong().size(12.0));
+                ui.add_space(2.0);
+                ui.label(RichText::new(
+r#"aws s3api put-bucket-cors \
+  --bucket YOUR_BUCKET \
+  --cors-configuration '{
+    "CORSRules": [{
+      "AllowedOrigins": ["*"],
+      "AllowedMethods": ["GET","PUT","DELETE","HEAD"],
+      "AllowedHeaders": ["*"],
+      "MaxAgeSeconds": 3600
+    }]
+  }'"#).font(mono.clone()).color(Color32::from_gray(30)));
+
+                ui.add_space(10.0);
+                ui.label(RichText::new("Backblaze B2 — web console").strong().size(12.0));
+                ui.add_space(2.0);
+                ui.label(RichText::new(
+r#"Backblaze console → Buckets → (your bucket) → CORS Rules
+→ Add rule:
+  Allowed origins:  *
+  Allowed headers:  authorization, content-type, x-amz-*
+  Allowed ops:      GET, PUT, DELETE, HEAD, LIST
+  Max age:          3600"#).font(mono.clone()).color(Color32::from_gray(30)));
+
+                ui.add_space(10.0);
+                ui.label(RichText::new("MinIO — mc CLI").strong().size(12.0));
+                ui.add_space(2.0);
+                ui.label(RichText::new(
+r#"mc anonymous set-json cors.json ALIAS/BUCKET
+# cors.json:
+# {"cors":[{"allowedOrigins":["*"],"allowedMethods":
+#   ["GET","PUT","DELETE","HEAD"],"allowedHeaders":["*"]}]}"#
+                ).font(mono.clone()).color(Color32::from_gray(30)));
+            });
+
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new(
+                "After applying the rule, reload this page.\n\
+                 If you are testing locally (localhost) you may also need to allow that specific origin.",
+            )
+            .size(12.0)
+            .color(Color32::from_gray(80)),
+        );
+    });
 }
